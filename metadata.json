@@ -1,0 +1,5 @@
+{
+  "name": "Rekvin - Persona Engine",
+  "description": "A Socratic interview that leaves evidence behind. Every question plants a node. Every node flows toward a persona you can actually trust.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"]
+}
