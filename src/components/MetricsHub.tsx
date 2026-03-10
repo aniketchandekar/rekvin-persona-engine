@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { ReactFlow, Background, Controls, Node, Edge, ReactFlowProvider, addEdge, applyNodeChanges, applyEdgeChanges, Panel } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Brain, BarChart3, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Video, FileText, Play, Sparkles, X, FileSearch } from 'lucide-react';
+import { Brain, BarChart3, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Video, FileText, Play, Sparkles, X, FileSearch, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { nodeTypes } from './CustomNodes';
 import { SavedSession } from '../types';
@@ -285,6 +285,40 @@ export function MetricsHub({ savedSessions }: { savedSessions: SavedSession[] })
     }
   };
 
+  const handleDownloadReport = () => {
+    if (!diagnosticReport) return;
+
+    let content = `# Diagnostic Report\n`;
+    content += `AI synthesis of metric signals\n\n`;
+
+    if (diagnosticReport.personaFit) {
+      content += `## Persona Fit Assessment\n`;
+      content += `**Score:** ${diagnosticReport.personaFit.score}\n\n`;
+      content += `${diagnosticReport.personaFit.assessment}\n\n`;
+    }
+
+    if (diagnosticReport.productFixes && diagnosticReport.productFixes.length > 0) {
+      content += `## Product Recommendations\n`;
+      diagnosticReport.productFixes.forEach((fix: any) => {
+        content += `### [${fix.priority} FIX] ${fix.issue}\n`;
+        content += `${fix.recommendation}\n\n`;
+      });
+    }
+
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `diagnostic_report_${Date.now()}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setSnackbarMessage("Report downloaded successfully.");
+    setTimeout(() => setSnackbarMessage(null), 3000);
+  };
+
   const onDragStart = (e: React.DragEvent, type: string, data: any) => {
     e.dataTransfer.setData('application/reactflow', JSON.stringify({ type, data }));
     e.dataTransfer.effectAllowed = 'move';
@@ -453,12 +487,22 @@ export function MetricsHub({ savedSessions }: { savedSessions: SavedSession[] })
                   </h2>
                   <p className="text-sm text-cream-dim mt-1">AI synthesis of metric signals</p>
                 </div>
-                <button
-                  onClick={() => setReportModalOpen(false)}
-                  className="p-1 rounded-full text-cream-dim hover:bg-white/5 transition-colors"
-                >
-                  <X size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDownloadReport}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-node-tension/10 text-node-tension border border-node-tension/30 hover:bg-node-tension/20 transition-all text-xs font-medium"
+                    title="Download as Markdown"
+                  >
+                    <Download size={14} />
+                    Download
+                  </button>
+                  <button
+                    onClick={() => setReportModalOpen(false)}
+                    className="p-1 rounded-full text-cream-dim hover:bg-white/5 transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-6">

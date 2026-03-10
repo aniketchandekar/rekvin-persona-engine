@@ -232,7 +232,6 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   const startPlaywrightTest = async () => {
     if (!activePersona) { setError("Please drop a persona into the testing area first."); return; }
     if (!targetUrl) { setError("Please provide a target URL."); return; }
-    if (!agentGoal) { setError("Please provide an agent goal."); return; }
     setError(null);
     await playwright.startTest(targetUrl, activePersona, agentGoal);
   };

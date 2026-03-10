@@ -9,7 +9,9 @@ This project is built from the ground up to showcase the multimodal, reasoning, 
 ### 1. Multimodal Live Agent (`gemini-2.5-flash-native-audio-preview`)
 The core of the testing engine is a Playwright-driven agent loop powered by the **Gemini Multimodal Live API**.
 - **1FPS Real-Time Vision:** Instead of static polling, the agent streams the browser's viewport at 1 frame per second. Gemini "sees" the UI continuously to understand animations, state changes, and interactive flow.
+- **Autonomous Initialization:** The agent immediately begins its testing session upon page load, narrating its first impressions and taking actions without requiring initial user input.
 - **Multimodal Tool Use:** Gemini uses function calling to control Playwright directly (click, type, scroll, wait), closing the loop between vision and action.
+- **Optional Session Goals:** Agents can either be given a specific objective (e.g., "Find the checkout page") or explore the application freely to discover friction points.
 - **Low-Latency Audio Monologue:** The agent narrates its "thoughts" in real-time. You hear its reasoning as it happens, with no delay between vision and speech.
 
 ### 2. User Voice Intervention & Barge-in
@@ -23,6 +25,7 @@ The Metrics Hub transforms raw session recordings into actionable, quantitative 
 - **Session-to-Metric Mapping:** Users drag "Session" nodes (containing the agent's action history and vision data) and connect them to specific "Metric" nodes.
 - **Multimodal Evaluation:** Gemini analyzes the session breadcrumbs and visual state changes to calculate specific metrics such as *Time-to-Completion*, *Comprehension Risk*, and *Dead-end Encounters*.
 - **Diagnostic Verdicts:** Every calculated metric includes a structured **Verdict**. This represents an AI-driven expert analysis that explains *why* a specific friction point occurred based on the persona's psychological profile.
+- **Downloadable Reports:** Synthesized diagnostic reports can be exported as Markdown files, making it easy to share UX findings with the broader product team.
 
 ## 🧠 Persona Calibration & Calibration
 Rekvin ensures your research is grounded in reality through a dual-calibration system.
@@ -43,7 +46,7 @@ After testing, the Metrics Hub is used to validate the persona model itself.
 - **Frontend:** React 19, Vite, Tailwind CSS (v4), Motion (Framer Motion).
 - **Visual Engine:** `@xyflow/react` (React Flow) v12 for the interactive canvases.
 - **Backend:** Node.js (Express) server running a Playwright-powered browser automation loop using the **Gemini Multimodal Live API**.
-- **Edge Scheduling:** Custom Web Audio logic for zero-latency, gapless PCM audio output.
+- **Autoplay-Aware Audio Scheduling:** Custom Web Audio logic for zero-latency, gapless PCM audio output, with interaction-triggered initialization to bypass browser autoplay restrictions.
 - **AI SDK:** `@google/genai` (Google Generative AI SDK for Node.js).
 
 ## 🧠 The "Persona" Node Structure

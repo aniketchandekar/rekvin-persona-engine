@@ -7,12 +7,12 @@ Rekvin is an AI-powered UX research platform that transforms static personas int
 ## ✨ Key Features
 
 - **Visual Persona Builder:** Create deep user archetypes using a node-based canvas and AI-guided Socratic interviews.
-- **Multimodal Live Agent:** Watch AI agents navigate your site in real-time using the **Gemini Multimodal Live API**. The agent "sees" the UI at 1fps and narrates its internal monologue via low-latency audio.
+- **Multimodal Live Agent:** Watch AI agents navigate your site in real-time using the **Gemini Multimodal Live API**. The agent "sees" the UI at 1fps and immediately begins testing autonomously upon session start.
 - **User Voice Intervention:** Talk to the agent during a test! Use your microphone to redirect the agent's behavior or ask about its experience mid-session.
 - **Visual Metrics Hub:** Drag-and-drop analysis. Connect "Session" nodes to "Metric" nodes to calculate quantitative friction, comprehension risks, and completion rates.
 - **Persona Calibration:** Every persona is assigned an AI-generated **Quality Score** based on the depth and diversity of its supporting evidence (Research, Assumptions, Ideas).
-- **Automated UX Reports:** Generate structured diagnostic reports that calculate persona-fit and identify specific UI bottlenecks with automated verdicts.
-- **Gapless Audio:** Advanced Web Audio API scheduling ensures the agent's voice is seamless and natural with zero inter-chunk pauses.
+- **Automated UX Reports:** Generate and **download** structured diagnostic reports that calculate persona-fit and identify specific UI bottlenecks with automated verdicts.
+- **Gapless Audio:** Advanced Web Audio API scheduling with autoplay-aware initialization ensures the agent's voice is seamless, natural, and reliable across all browsers.
 
 ## 🚀 Getting Started
 

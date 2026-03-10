@@ -176,6 +176,19 @@ export function usePlaywrightAgent() {
         const sessionId = `session-${Date.now()}`;
         sessionIdRef.current = sessionId;
 
+        // ── AUDIO ── Eagerly initialize AudioContext on user interaction to bypass autoplay policies
+        try {
+            if (!outputAudioCtxRef.current) {
+                const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                outputAudioCtxRef.current = new AudioContextClass({ sampleRate: 24000 });
+            }
+            if (outputAudioCtxRef.current.state === 'suspended') {
+                outputAudioCtxRef.current.resume();
+            }
+        } catch (err) {
+            console.warn('Could not initialize AudioContext eagerly:', err);
+        }
+
         // 1. Open SSE stream FIRST
         const evtSource = new EventSource(`/api/test/stream/${sessionId}`);
         eventSourceRef.current = evtSource;

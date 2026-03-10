@@ -350,6 +350,19 @@ RULES:
                     console.log(`[${sessionId}] Live API setup complete`);
                     // Send the first screenshot to kick things off
                     await sendScreenshotToGemini(session, sessionId);
+                    
+                    // Send an initial message to trigger the model to start acting
+                    const initialMessage = {
+                        clientContent: {
+                            turns: [{
+                                role: 'user',
+                                parts: [{ text: 'The page has loaded. Please begin your testing session now.' }]
+                            }],
+                            turnComplete: true
+                        }
+                    };
+                    session.geminiWs?.send(JSON.stringify(initialMessage));
+
                     // Start periodic screenshot streaming
                     session.screenshotInterval = setInterval(async () => {
                         if (session.running) {
