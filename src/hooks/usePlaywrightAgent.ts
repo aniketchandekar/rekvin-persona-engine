@@ -275,6 +275,9 @@ export function usePlaywrightAgent() {
         evtSource.addEventListener('thought', (e) => {
             const data: AgentThought = JSON.parse((e as MessageEvent).data);
             setThoughts(prev => [...prev, data]);
+            if (data.thought && !hasPcmAudioRef.current) {
+                speakText(data.thought);
+            }
         });
 
         evtSource.addEventListener('action_result', (e) => {

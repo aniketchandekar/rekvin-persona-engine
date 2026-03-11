@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Type } from '@google/genai';
 import { SavedSession, Narration } from '../types';
 import { usePlaywrightAgent } from '../hooks/usePlaywrightAgent';
-import { PersonaChatModal } from './PersonaChatModal';
+
 
 // ── Action badge color map ──────────────────────────────────────────
 const ACTION_COLORS: Record<string, string> = {
@@ -25,7 +25,7 @@ const ACTION_COLORS: Record<string, string> = {
 
 import { PRESET_PERSONAS } from '../constants/presets';
 
-export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, activeTab, setActiveTab, devMode }: { savedPersonas: any[], savedSessions: SavedSession[], setSavedSessions: React.Dispatch<React.SetStateAction<SavedSession[]>>, activeTab: 'simulation' | 'saved', setActiveTab: (tab: 'simulation' | 'saved') => void, devMode: boolean }) {
+export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, activeTab, setActiveTab, devMode, onOpenChat }: { savedPersonas: any[], savedSessions: SavedSession[], setSavedSessions: React.Dispatch<React.SetStateAction<SavedSession[]>>, activeTab: 'simulation' | 'saved', setActiveTab: (tab: 'simulation' | 'saved') => void, devMode: boolean, onOpenChat: (persona: any, sessionData?: any) => void }) {
   const [activePersona, setActivePersona] = useState<any | null>(null);
   const [targetUrl, setTargetUrl] = useState<string>('');
   const [agentGoal, setAgentGoal] = useState<string>('');
@@ -41,7 +41,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
   const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
-  const [chatSessionData, setChatSessionData] = useState<{ id: string, data: any } | null>(null);
+
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -477,7 +477,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                       <div className="px-4 pb-3 flex items-center gap-2">
                         {session.personaContent && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); setChatSessionData({ id: session.id, data: { label: session.personaLabel, content: session.personaContent } }); }}
+                            onClick={(e) => { e.stopPropagation(); onOpenChat({ data: { label: session.personaLabel, content: session.personaContent } }, session); }}
                             className="p-1.5 rounded-lg bg-ink-3 border border-rule-2 hover:bg-node-idea/20 hover:text-node-idea hover:border-node-idea/50 text-cream-dim transition-all"
                             title="Chat with Persona"
                           >

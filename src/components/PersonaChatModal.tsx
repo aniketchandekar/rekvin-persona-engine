@@ -6,9 +6,10 @@ import { geminiService } from '../services/geminiService';
 interface PersonaChatModalProps {
     persona: any;
     onClose: () => void;
+    sessionData?: any;
 }
 
-export function PersonaChatModal({ persona, onClose }: PersonaChatModalProps) {
+export function PersonaChatModal({ persona, onClose, sessionData }: PersonaChatModalProps) {
     const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([
         { role: 'model', text: `Hi! I'm ${persona.data.label}. What would you like to ask me?` }
     ]);
@@ -32,6 +33,27 @@ export function PersonaChatModal({ persona, onClose }: PersonaChatModalProps) {
 
     useEffect(() => {
         const initChat = async () => {
+            let contextBlocks = '';
+            if (sessionData) {
+                contextBlocks += `\n\n--- RECENT TEST SESSION CONTEXT ---\n`;
+                contextBlocks += `You recently completed a test session on this web app.\n`;
+                if (sessionData.mode === 'playwright' && sessionData.agentThoughts) {
+                    contextBlocks += `Here is your exact thought process and actions during the test:\n`;
+                    sessionData.agentThoughts.forEach((t: any, i: number) => {
+                        contextBlocks += `Step ${i + 1} [${t.action}]: ${t.thought}\n`;
+                    });
+                } else if (sessionData.mode === 'vision' && sessionData.narrations) {
+                    contextBlocks += `Here is your exact narration during the test:\n`;
+                    sessionData.narrations.forEach((n: any, i: number) => {
+                        contextBlocks += `- ${n.text}\n`;
+                    });
+                }
+                if (sessionData.analysis) {
+                    contextBlocks += `\nYour overall analysis of the experience: Success Score: ${sessionData.analysis.metrics.successScore}%, Sentiment: ${sessionData.analysis.metrics.sentiment}.\n`;
+                }
+                contextBlocks += `\nThe user might ask you questions about this specific test session. Use the context above to explain your decisions, what you saw, and how you felt about the experience.\n-----------------------------------\n`;
+            }
+
             const systemInstruction = `You are roleplaying as the following user persona:
 Name/Label: ${persona.data.label}
 Description: ${persona.data.content}
@@ -42,7 +64,7 @@ Traits: ${Object.entries(persona.data.fields || {})
 Rules:
 1. Always stay in character. Speak in the first person ("I").
 2. Your tone should match the traits described.
-3. Keep responses relatively concise (2-4 sentences max).`;
+3. Keep responses relatively concise (2-4 sentences max).${contextBlocks}`;
 
             const session = geminiService.createChatbot(systemInstruction, 'gemini-3-flash-preview');
             setChatSession(session);

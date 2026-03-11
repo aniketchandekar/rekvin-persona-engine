@@ -280,6 +280,47 @@ app.post('/api/test/audio', (req, res) => {
     res.json({ ok: true });
 });
 
+// 5. Text-to-Speech endpoint (used by PersonaChatModal)
+app.post('/api/tts', async (req, res) => {
+    const { text, voiceName } = req.body;
+    if (!text) return res.status(400).json({ error: 'Text is required' });
+
+    try {
+        const accessToken = await getAccessToken();
+        const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize`;
+        
+        let gcVoiceName = 'en-US-Journey-F'; // default female
+        if (voiceName === 'Fenrir') gcVoiceName = 'en-US-Journey-D'; // male
+        if (voiceName === 'Aoede') gcVoiceName = 'en-US-Journey-F'; // female
+
+        const response = await fetch(ttsUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+                'x-goog-user-project': GCP_PROJECT_ID
+            },
+            body: JSON.stringify({
+                input: { text },
+                voice: { languageCode: 'en-US', name: gcVoiceName },
+                audioConfig: { audioEncoding: 'LINEAR16', sampleRateHertz: 24000 }
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            console.error('TTS error:', err);
+            return res.status(response.status).json({ error: 'Failed to synthesize speech' });
+        }
+
+        const data: any = await response.json();
+        res.json({ audioBase64: data.audioContent });
+    } catch (err: any) {
+        console.error('TTS endpoint error:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // Health check
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Brain, FilePlus2, MessageSquare, Plus, Save, Trash2, ArrowRight, Play, LayoutBox, Sparkles, Send, Search, Download, CheckCircle2, ChevronRight, X, AlertCircle, BarChart3, Presentation, Target, UserCircle, Wand2, RefreshCw, BoxSelect, Terminal, FileCode2, Globe, Lightbulb, Mic, Square, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Brain, FilePlus2, MessageSquare, Plus, Save, Trash2, ArrowRight, Play, Layout, Sparkles, Send, Search, Download, CheckCircle2, ChevronRight, X, AlertCircle, BarChart3, Presentation, Target, UserCircle, Wand2, RefreshCw, BoxSelect, Terminal, FileCode2, Globe, Lightbulb, Mic, Square, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { ReactFlow, Background, Controls, addEdge, applyNodeChanges, applyEdgeChanges, Node, Edge, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { nodeTypes } from './components/CustomNodes';
@@ -74,7 +74,7 @@ export default function App() {
   const [savedPersonas, setSavedPersonas] = useState<SavedPersona[]>([]);
   const [savedSessions, setSavedSessions] = useState<SavedSession[]>([]);
   const [devMode, setDevMode] = useState(false);
-  const [chatPersona, setChatPersona] = useState<any | null>(null);
+  const [chatModalData, setChatModalData] = useState<{ persona: any, sessionData?: any } | null>(null);
   const [viewedOnboarding, setViewedOnboarding] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('rekvin_onboarding');
@@ -201,6 +201,7 @@ export default function App() {
                 activeTab={testingSubTab}
                 setActiveTab={setTestingSubTab}
                 devMode={devMode}
+                onOpenChat={(persona, sessionData) => setChatModalData({ persona, sessionData })}
               />
             </motion.div>
           ) : mainTab === 'metrics' ? (
@@ -268,13 +269,13 @@ export default function App() {
                     {/* Render Dev Mode Presets first if active */}
                     {devMode && PRESET_PERSONAS.map((persona) => (
                       <div key={persona.id} className="relative group">
-                        <StaticPersonaCard persona={persona as any} isPreset onChat={() => setChatPersona(persona)} />
+                        <StaticPersonaCard persona={persona as any} isPreset onChat={() => setChatModalData({ persona })} />
                       </div>
                     ))}
 
                     {savedPersonas.map((persona) => (
                       <div key={persona.id} className="relative group">
-                        <StaticPersonaCard persona={persona} onChat={() => setChatPersona(persona)} />
+                        <StaticPersonaCard persona={persona} onChat={() => setChatModalData({ persona })} />
                         <button
                           onClick={() => handleDeletePersona(persona.id)}
                           className="absolute -top-3 -right-3 p-2 rounded-full bg-ink-3 border border-rule-2 text-cream-dim hover:text-node-tension hover:bg-node-tension/10 shadow-xl opacity-0 group-hover:opacity-100 transition-all z-10"
@@ -293,10 +294,11 @@ export default function App() {
 
         {/* Global Modals */}
         <AnimatePresence>
-          {chatPersona && (
+          {chatModalData && (
             <PersonaChatModal
-              persona={chatPersona}
-              onClose={() => setChatPersona(null)}
+              persona={chatModalData.persona}
+              sessionData={chatModalData.sessionData}
+              onClose={() => setChatModalData(null)}
             />
           )}
         </AnimatePresence>
