@@ -117,7 +117,7 @@ Rules:
 
             // Fetch TTS
             const voiceName = getVoiceForPersona(); // simple heuristic
-            const ttsRes = await fetch('http://localhost:3001/api/tts', {
+            const ttsRes = await fetch('/api/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: responseText, voiceName })

@@ -6,13 +6,13 @@ Rekvin is an AI-powered UX research and autonomous testing platform. It allows p
 
 This project is built from the ground up to showcase the multimodal, reasoning, and synthesis capabilities of the Google Gemini models (`gemini-2.5-flash`, `gemini-2.5-pro`, and the `gemini-2.5-flash-native-audio-preview` Live API).
 
-### 1. Multimodal Live Agent (`gemini-2.5-flash-native-audio-preview`)
-The core of the testing engine is a Playwright-driven agent loop powered by the **Gemini Multimodal Live API**.
+### 1. Multimodal Live Agent (`gemini-live-2.5-flash-native-audio` [GA])
+The core of the testing engine is a Playwright-driven agent loop powered by the **Vertex AI Multimodal Live API**.
 - **1FPS Real-Time Vision:** Instead of static polling, the agent streams the browser's viewport at 1 frame per second. Gemini "sees" the UI continuously to understand animations, state changes, and interactive flow.
 - **Autonomous Initialization:** The agent immediately begins its testing session upon page load, narrating its first impressions and taking actions without requiring initial user input.
 - **Multimodal Tool Use:** Gemini uses function calling to control Playwright directly (click, type, scroll, wait), closing the loop between vision and action.
 - **Optional Session Goals:** Agents can either be given a specific objective (e.g., "Find the checkout page") or explore the application freely to discover friction points.
-- **Low-Latency Audio Monologue:** The agent narrates its "thoughts" in real-time. You hear its reasoning as it happens, with no delay between vision and speech.
+- **Hybrid Audio Reliability:** The engine uses a dual-path speech system. While it leverages the low-latency raw PCM stream from Vertex AI, it also implements a **Web Speech TTS fallback**. If the PCM stream is suppressed (common during tool execution), the system immediately reads the agent's transcript aloud using the browser's internal speech engine, ensuring zero silence.
 
 ### 2. User Voice Intervention & Barge-in
 Rekvin enables a uniquely collaborative research flow via the Multimodal Live API.
@@ -22,7 +22,8 @@ Rekvin enables a uniquely collaborative research flow via the Multimodal Live AP
 
 ### 3. Visual Metrics Hub & Behavioral Analysis
 The Metrics Hub transforms raw session recordings into actionable, quantitative data.
-- **Session-to-Metric Mapping:** Users drag "Session" nodes (containing the agent's action history and vision data) and connect them to specific "Metric" nodes.
+- **Compact Grid Visualization:** Saved sessions are presented in a responsive, multi-column card layout. This allows researchers to scan dozens of sessions at a glance.
+- **Expandable Deep Dives:** Clicking a session card triggers a smooth, layout-aware expansion. This modal-like view surface the full behavioral story, comparative metrics, and the step-by-step action transcript.
 - **Multimodal Evaluation:** Gemini analyzes the session breadcrumbs and visual state changes to calculate specific metrics such as *Time-to-Completion*, *Comprehension Risk*, and *Dead-end Encounters*.
 - **Diagnostic Verdicts:** Every calculated metric includes a structured **Verdict**. This represents an AI-driven expert analysis that explains *why* a specific friction point occurred based on the persona's psychological profile.
 - **Downloadable Reports:** Synthesized diagnostic reports can be exported as Markdown files, making it easy to share UX findings with the broader product team.
@@ -46,9 +47,9 @@ After testing, the Metrics Hub is used to validate the persona model itself.
 - **Frontend:** React 19, Vite, Tailwind CSS (v4), Motion (Framer Motion).
 - **Visual Engine:** `@xyflow/react` (React Flow) v12 for the interactive canvases.
 - **Backend:** Node.js (Express) server running a Playwright-powered browser automation loop and acting as a secure Vertex AI proxy for frontend clients.
-- **Deployment:** Fully containerized via Docker and deployed to Google Cloud Run, utilizing Application Default Credentials (ADC) to interact with Vertex AI safely.
-- **Autoplay-Aware Audio Scheduling:** Custom Web Audio logic for zero-latency, gapless PCM audio output, with interaction-triggered initialization to bypass browser autoplay restrictions.
-- **AI SDK:** `google-auth-library` and REST calls for Vertex AI, alongside `@google/genai` (where applicable).
+- **Cloud-Native ADC Auth:** Uses `google-auth-library` to authenticate with Vertex AI via Service Account keys or local ADC, eliminating the need to expose API keys for Live connections.
+- **Hybrid Speech Engine:** Custom Web Audio logic that seamlessly blends raw 24kHz PCM chunks with Web Speech API (TTS) fallbacks for maximum resilience against network jitter or API latency.
+- **AI SDK:** Vertex AI GA models for real-time interaction and reasoning.
 
 ## 🧠 The "Persona" Node Structure
 A Persona in Rekvin is more than just a description. It's a structured entity including:

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mic, Search, Sparkles, MessageSquare, Brain, Square, Send, Play, X, PanelLeftClose, PanelLeftOpen, Save, Trash2 } from 'lucide-react';
+import { Brain, FilePlus2, MessageSquare, Plus, Save, Trash2, ArrowRight, Play, LayoutBox, Sparkles, Send, Search, Download, CheckCircle2, ChevronRight, X, AlertCircle, BarChart3, Presentation, Target, UserCircle, Wand2, RefreshCw, BoxSelect, Terminal, FileCode2, Globe, Lightbulb, Mic, Square, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { ReactFlow, Background, Controls, addEdge, applyNodeChanges, applyEdgeChanges, Node, Edge, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { nodeTypes } from './components/CustomNodes';
@@ -535,7 +535,7 @@ function GuidedInterview() {
   const [messages, setMessages] = useState<{ role: 'user' | 'ai', text: string }[]>([]);
   const [inputText, setInputText] = useState('');
   const [isThinking, setIsThinking] = useState(false);
-  const [displayQuestion, setDisplayQuestion] = useState('"What are you building?"');
+  const [displayQuestion, setDisplayQuestion] = useState('What are you building?');
   const [options, setOptions] = useState<string[]>([
     'A productivity app',
     'A marketplace',
@@ -544,6 +544,17 @@ function GuidedInterview() {
   ]);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchResults, setSearchResults] = useState<{ title: string, uri: string }[]>([]);
+
+  const SHUFFLING_WORDS = ['building?', 'designing?', 'testing?', 'creating?', 'researching?'];
+  const [wordIndex, setWordIndex] = useState(0);
+
+  useEffect(() => {
+    if (messages.length > 0) return;
+    const interval = setInterval(() => {
+      setWordIndex(i => (i + 1) % SHUFFLING_WORDS.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [messages.length]);
 
   const handleSend = async (textOverride?: string) => {
     const text = typeof textOverride === 'string' ? textOverride : inputText;
@@ -648,11 +659,6 @@ function GuidedInterview() {
     <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
       <div className="max-w-2xl w-full flex flex-col gap-6">
         <div className="text-center min-h-[120px] flex flex-col justify-center">
-          <div className="flex items-center justify-center mb-4">
-            <div className="font-logo text-lg tracking-tight text-cream/40 font-semibold">
-              rek<span className="text-node-idea/40">vin</span>
-            </div>
-          </div>
           <AnimatePresence mode="wait">
             {isThinking ? (
               <motion.div
@@ -665,6 +671,31 @@ function GuidedInterview() {
                 <Sparkles size={20} className="animate-pulse" />
                 <span className="font-serif italic text-lg tracking-wide">Synthesizing...</span>
               </motion.div>
+            ) : messages.length === 0 ? (
+              <motion.div
+                key="shuffling-title"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+                className="text-3xl max-w-xl mx-auto flex flex-wrap justify-center gap-2 items-center"
+              >
+                <span className="font-sans font-semibold tracking-tight text-cream">What are you</span>
+                <div className="relative h-10 w-48 flex items-center justify-start overflow-hidden ml-1">
+                  <AnimatePresence mode="popLayout">
+                    <motion.span
+                      key={wordIndex}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -30 }}
+                      transition={{ duration: 0.4, type: "spring", stiffness: 300, damping: 25 }}
+                      className="absolute font-serif italic text-node-idea"
+                    >
+                      {SHUFFLING_WORDS[wordIndex]}
+                    </motion.span>
+                  </AnimatePresence>
+                </div>
+              </motion.div>
             ) : (
               <motion.div
                 key={currentQuestion}
@@ -674,7 +705,7 @@ function GuidedInterview() {
                 transition={{ duration: 0.4, ease: "easeOut" }}
                 className="font-serif text-2xl italic text-cream/90 leading-relaxed max-w-xl mx-auto"
               >
-                {currentQuestion}
+                "{currentQuestion}"
               </motion.div>
             )}
           </AnimatePresence>
@@ -729,7 +760,7 @@ function GuidedInterview() {
                 onClick={handleGenerateIdea}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-rule-2 bg-ink-3/50 text-cream-dim text-xs hover:bg-white/5 hover:text-cream hover:border-cream/30 transition-all"
               >
-                <Sparkles size={14} />
+                <Lightbulb size={14} />
                 <span>Generate an idea</span>
               </button>
             ) : (
@@ -737,7 +768,7 @@ function GuidedInterview() {
                 onClick={handleSearchWeb}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg border border-rule-2 bg-ink-3/50 text-cream-dim text-xs hover:bg-white/5 hover:text-cream hover:border-cream/30 transition-all"
               >
-                <Search size={14} />
+                <Globe size={14} />
                 <span>Not sure? Search the web</span>
               </button>
             )}

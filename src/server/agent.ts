@@ -18,7 +18,7 @@ app.use(express.json({ limit: '10mb' }));
 
 const GCP_PROJECT_ID = 'rekvin-v0';
 const GCP_LOCATION = 'us-central1';
-const LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
+const LIVE_MODEL = 'gemini-live-2.5-flash-native-audio';
 
 // Server-side Gemini proxy for the frontend
 // Uses google-auth-library (ADC) + direct Vertex AI REST API
@@ -85,7 +85,7 @@ app.post('/api/gemini/proxy', async (req, res) => {
 
 // API routes should come BEFORE static serving
 
-// Use the Vertex AI endpoint for the Multimodal Live API
+// Use Vertex AI endpoint for the Multimodal Live API (GA model: gemini-live-2.5-flash-native-audio)
 const LIVE_WS_URL = `wss://${GCP_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent`;
 
 const auth = new GoogleAuth({
@@ -364,6 +364,7 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
                 console.log(`[${sessionId}] Gemini Live API WebSocket connected`);
 
                 // Send initial configuration
+                // Use the Vertex AI model format
                 const configMessage = {
                     setup: {
                         model: `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/publishers/google/models/${LIVE_MODEL}`,
@@ -392,8 +393,11 @@ ${goal ? `\nYOUR CURRENT GOAL:\n"${goal}"\nYou must try to accomplish this goal 
 
 RULES:
 - You SEE the web application through the video frames being streamed to you.
-- You ACT on the app by calling the provided browser tools (click_element, type_text, scroll_page, hover_element, finish_session).
+- CRITICAL: Only interact with elements you VISIBLY see on the screen. Describe the actual text labels you see before acting.
+- DO NOT assume standard links like "Products", "Pricing", or "About" exist if they are not clearly labeled.
+- You ACT on the app by calling the provided browser tools.
 - Narrate your thoughts out loud in first person as the persona before each action.
+- If a tool fails (e.g. timeout), DO NOT simply retry the same action. Observe the page again to see if the element exists or if the page state changed.
 - If the persona has low tech literacy, hesitate and express confusion at complex UI.
 - If the persona has low patience, abandon after 2-3 frustrations.
 - For selectors, prefer #id, [aria-label="..."], or button:has-text("Text") formats.
@@ -433,6 +437,10 @@ RULES:
 
             try {
                 const response = JSON.parse(rawData.toString());
+
+                if (response.error) {
+                    console.error(`[${sessionId}] Vertex AI WS Error received:`, JSON.stringify(response.error, null, 2));
+                }
 
                 // ── Setup complete acknowledgment ──
                 if (response.setupComplete) {
@@ -627,7 +635,7 @@ async function sendScreenshotToGemini(session: AgentSession, sessionId: string) 
     if (!session.running || !session.geminiWs || session.geminiWs.readyState !== WebSocket.OPEN) return;
 
     try {
-        const screenshotBuf = await session.page.screenshot({ type: 'jpeg', quality: 50 });
+        const screenshotBuf = await session.page.screenshot({ type: 'jpeg', quality: 90 });
         const base64Screenshot = screenshotBuf.toString('base64');
 
         // Send to frontend for display
@@ -703,7 +711,13 @@ async function executeTool(page: Page, toolName: string, args: any): Promise<{ s
                 return { success: false, detail: `Unknown tool: "${toolName}"` };
         }
     } catch (err: any) {
-        return { success: false, detail: `Tool "${toolName}" failed: ${err?.message?.split('\n')[0]?.slice(0, 200) || err?.message}` };
+        // Provide more granular feedback for timeouts
+        const isTimeout = err?.message?.toLowerCase().includes('timeout');
+        const detail = isTimeout 
+            ? `Action failed: Timeout 4000ms exceeded. The element "${safeSelector}" may not be visible, clickable, or exists with a different selector.`
+            : `Tool "${toolName}" failed: ${err?.message?.split('\n')[0]?.slice(0, 200) || err?.message}`;
+            
+        return { success: false, detail };
     }
 }
 

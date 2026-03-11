@@ -23,6 +23,12 @@ export function usePlaywrightAgent() {
     const micStreamRef = useRef<MediaStream | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const audioWorkletRef = useRef<ScriptProcessorNode | null>(null);
+    // TTS fallback: tracks if real PCM audio has been received this session
+    const hasPcmAudioRef = useRef<boolean>(false);
+    // TTS speech queue for reliable, non-overlapping speech
+    const ttsSpeakingRef = useRef<boolean>(false);
+    const ttsQueueRef = useRef<string[]>([]);
+    const ttsUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
     // Schedules a raw PCM base64 chunk (24kHz, 16-bit, mono) into a gapless audio stream
     const schedulePcmChunk = useCallback((base64: string) => {
@@ -69,6 +75,60 @@ export function usePlaywrightAgent() {
         } catch (err) {
             console.error('Error scheduling PCM chunk:', err);
         }
+    }, []);
+
+    // ── TTS FALLBACK SPEECH ────────────────────────────────────────────────
+    // Queue text to speak via browser SpeechSynthesis when PCM audio is unavailable
+    const speakText = useCallback((text: string) => {
+        if (!text || text.trim().length === 0) return;
+        ttsQueueRef.current.push(text);
+        processTtsQueue();
+    }, []);
+
+    const processTtsQueue = useCallback(() => {
+        if (ttsSpeakingRef.current || ttsQueueRef.current.length === 0) return;
+        const text = ttsQueueRef.current.shift();
+        if (!text) return;
+
+        ttsSpeakingRef.current = true;
+        setIsSpeaking(true);
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        ttsUtteranceRef.current = utterance;
+
+        // Pick a natural-sounding voice
+        const voices = window.speechSynthesis.getVoices();
+        const preferred = voices.find(v => v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('google') || (v.lang.startsWith('en') && !v.name.includes('compact')));
+        if (preferred) utterance.voice = preferred;
+
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+
+        utterance.onend = () => {
+            ttsSpeakingRef.current = false;
+            ttsUtteranceRef.current = null;
+            if (ttsQueueRef.current.length > 0) {
+                processTtsQueue();
+            } else {
+                setIsSpeaking(false);
+            }
+        };
+        utterance.onerror = () => {
+            ttsSpeakingRef.current = false;
+            ttsUtteranceRef.current = null;
+            processTtsQueue();
+        };
+
+        window.speechSynthesis.speak(utterance);
+    }, []);
+
+    const stopTts = useCallback(() => {
+        window.speechSynthesis.cancel();
+        ttsSpeakingRef.current = false;
+        ttsQueueRef.current = [];
+        ttsUtteranceRef.current = null;
+        setIsSpeaking(false);
     }, []);
 
     // ── MICROPHONE CAPTURE ──────────────────────────────────────────
@@ -240,6 +300,7 @@ export function usePlaywrightAgent() {
         evtSource.addEventListener('audio', (e) => {
             const data = JSON.parse((e as MessageEvent).data);
             if (data.audioBase64) {
+                hasPcmAudioRef.current = true;
                 schedulePcmChunk(data.audioBase64);
             }
         });
@@ -252,7 +313,12 @@ export function usePlaywrightAgent() {
 
         evtSource.addEventListener('agent_transcript', (e) => {
             const data = JSON.parse((e as MessageEvent).data);
-            setAgentTranscript(data.text || '');
+            const text = data.text || '';
+            setAgentTranscript(text);
+            // Speak via TTS if no real PCM audio is being received
+            if (text && !hasPcmAudioRef.current) {
+                speakText(text);
+            }
         });
 
         evtSource.addEventListener('error', (e) => {
@@ -303,6 +369,7 @@ export function usePlaywrightAgent() {
 
     const stopTest = useCallback(async () => {
         stopMic();
+        stopTts();
         if (sessionIdRef.current) {
             try {
                 await fetch('/api/test/stop', {
@@ -317,10 +384,12 @@ export function usePlaywrightAgent() {
         eventSourceRef.current?.close();
         setStatus('completed');
         setStatusMessage('Test stopped by user.');
-    }, [stopMic]);
+    }, [stopMic, stopTts]);
 
     const reset = useCallback(() => {
         stopMic();
+        stopTts();
+        hasPcmAudioRef.current = false;
         // Stop and release the output AudioContext
         if (outputAudioCtxRef.current) {
             outputAudioCtxRef.current.close();
@@ -339,7 +408,7 @@ export function usePlaywrightAgent() {
         setUserTranscript('');
         setAgentTranscript('');
         sessionIdRef.current = null;
-    }, [stopMic]);
+    }, [stopMic, stopTts]);
 
     return {
         status,

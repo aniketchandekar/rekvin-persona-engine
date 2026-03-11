@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Brain, Monitor, Play, Square, Sparkles, Link as LinkIcon, Trash2, AlertCircle, Download, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Save, Video, Bot, Eye, ExternalLink, MessageSquare, Target, Mic, MicOff } from 'lucide-react';
+import { Brain, Monitor, Play, Square, Sparkles, Link as LinkIcon, Trash2, AlertCircle, Download, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Save, Video, Bot, Eye, ExternalLink, MessageSquare, Target, Mic, MicOff, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Type } from '@google/genai';
 import { SavedSession, Narration } from '../types';
@@ -42,6 +42,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
   const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
   const [chatSessionData, setChatSessionData] = useState<{ id: string, data: any } | null>(null);
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -421,44 +422,120 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                   No saved sessions yet. Run a simulation to save one.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {savedSessions.map(session => (
-                    <div key={session.id} className="bg-ink-2 border border-rule-2 rounded-2xl overflow-hidden flex flex-col">
-                      <div className="p-6 border-b border-rule flex items-center justify-between bg-ink-3/30">
+                    <motion.div
+                      key={session.id}
+                      layout
+                      className="bg-ink-2 border border-rule-2 rounded-xl overflow-hidden flex flex-col cursor-pointer hover:border-node-idea/40 transition-all group"
+                      onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}
+                    >
+                      {/* Compact Card Header */}
+                      <div className="p-4 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-node-persona/10 flex items-center justify-center flex-shrink-0">
+                          <Brain size={16} className="text-node-persona" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-cream truncate flex items-center gap-2">
+                            {session.personaLabel}
+                            {session.mode && (
+                              <span className={`text-[8px] font-mono uppercase px-1 py-0.5 rounded-full flex-shrink-0 ${session.mode === 'playwright' ? 'bg-node-idea/20 text-node-idea' : 'bg-cream/10 text-cream-dim'}`}>
+                                {session.mode === 'playwright' ? '🤖' : '👁'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] font-mono text-cream-dim truncate mt-0.5">{session.targetUrl}</div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <div className="text-[10px] text-cream-dim">{new Date(session.date).toLocaleDateString()}</div>
+                          {session.analysis && (
+                            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                              session.analysis.metrics.sentiment === 'Positive' ? 'bg-green-500/10 text-green-400' :
+                              session.analysis.metrics.sentiment === 'Negative' ? 'bg-red-500/10 text-red-400' :
+                              'bg-yellow-500/10 text-yellow-400'
+                            }`}>
+                              {session.analysis.metrics.successScore}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quick Metrics Bar */}
+                      {session.analysis && (
+                        <div className="px-4 pb-3 flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-ink-3 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-node-tension to-node-idea transition-all"
+                              style={{ width: `${session.analysis.metrics.successScore}%` }}
+                            />
+                          </div>
+                          <span className="text-[9px] text-cream-dim font-mono">F:{session.analysis.metrics.frictionRating}/10</span>
+                        </div>
+                      )}
+
+                      {/* Quick action buttons */}
+                      <div className="px-4 pb-3 flex items-center gap-2">
+                        {session.personaContent && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setChatSessionData({ id: session.id, data: { label: session.personaLabel, content: session.personaContent } }); }}
+                            className="p-1.5 rounded-lg bg-ink-3 border border-rule-2 hover:bg-node-idea/20 hover:text-node-idea hover:border-node-idea/50 text-cream-dim transition-all"
+                            title="Chat with Persona"
+                          >
+                            <MessageSquare size={12} />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); if (confirm('Delete this session?')) setSavedSessions(prev => prev.filter(s => s.id !== session.id)); }}
+                          className="p-1.5 rounded-lg bg-ink-3 border border-rule-2 hover:bg-red-500/10 text-cream-dim hover:text-red-400 transition-all ml-auto"
+                          title="Delete Session"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                        <div className="text-cream-dim group-hover:text-node-idea transition-colors">
+                          {expandedSessionId === session.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── Expanded Session Detail Panel ── */}
+              <AnimatePresence>
+                {expandedSessionId && (() => {
+                  const session = savedSessions.find(s => s.id === expandedSessionId);
+                  if (!session) return null;
+                  return (
+                    <motion.div
+                      key="detail"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 20 }}
+                      transition={{ duration: 0.2 }}
+                      className="bg-ink-2 border border-rule-2 rounded-2xl overflow-hidden flex flex-col"
+                    >
+                      {/* Detail Header */}
+                      <div className="p-5 border-b border-rule flex items-center justify-between bg-ink-3/30">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-node-persona/10 flex items-center justify-center">
                             <Brain size={20} className="text-node-persona" />
                           </div>
                           <div>
-                            <div className="text-sm font-medium text-cream flex items-center gap-2">
-                              {session.personaLabel}
-                              {session.mode && (
-                                <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded-full ${session.mode === 'playwright' ? 'bg-node-idea/20 text-node-idea' : 'bg-cream/10 text-cream-dim'}`}>
-                                  {session.mode === 'playwright' ? '🤖 Agent' : '👁 Vision'}
-                                </span>
-                              )}
-                              {session.personaContent && (
-                                <button
-                                  onClick={() => setChatSessionData({ id: session.id, data: { label: session.personaLabel, content: session.personaContent } })}
-                                  className="p-1.5 rounded-full bg-ink-3 border border-rule-2 hover:bg-node-idea/20 hover:text-node-idea hover:border-node-idea/50 text-cream-dim transition-all"
-                                  title="Chat with Persona"
-                                >
-                                  <MessageSquare size={12} />
-                                </button>
-                              )}
-                            </div>
-                            <div className="text-[10px] font-mono text-cream-dim mt-0.5 uppercase tracking-wider">{session.targetUrl}</div>
+                            <div className="text-sm font-medium text-cream">{session.personaLabel}</div>
+                            <div className="text-[10px] font-mono text-cream-dim mt-0.5">{session.targetUrl}</div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-xs text-cream-dim">{new Date(session.date).toLocaleDateString()}</div>
-                          <div className="text-[10px] text-cream-dim/50 mt-1">{new Date(session.date).toLocaleTimeString()}</div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-xs text-cream-dim">{new Date(session.date).toLocaleDateString()} {new Date(session.date).toLocaleTimeString()}</div>
+                          <button onClick={() => setExpandedSessionId(null)} className="p-1.5 rounded-lg hover:bg-white/10 text-cream-dim hover:text-cream transition-all">
+                            <X size={16} />
+                          </button>
                         </div>
                       </div>
 
-                      <div className="p-6 flex flex-col lg:flex-row gap-8">
-                        <div className="flex-1 flex flex-col gap-6">
-                          {/* Persona Details Box */}
+                      <div className="p-5 flex flex-col lg:flex-row gap-6">
+                        <div className="flex-1 flex flex-col gap-5">
+                          {/* Persona Profile */}
                           {session.personaContent && (
                             <div className="bg-ink-3/50 border border-rule p-4 rounded-xl">
                               <h4 className="text-[10px] font-mono uppercase tracking-widest text-cream-dim mb-2">Persona Profile</h4>
@@ -473,15 +550,12 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                                 <p className="text-sm text-cream/90 leading-relaxed font-serif italic">"{session.analysis.story}"</p>
                               </div>
 
-                              {/* Insights (Playwright only) */}
                               {session.analysis.insights && session.analysis.insights.length > 0 && (
                                 <div className="space-y-2">
                                   <h4 className="text-[10px] font-mono uppercase tracking-widest text-node-journey">Insights</h4>
                                   <ul className="flex flex-col gap-1.5">
                                     {session.analysis.insights.map((insight, i) => (
-                                      <li key={i} className="text-xs text-cream/70 leading-relaxed bg-white/5 p-2 rounded-md border border-white/5">
-                                        {insight}
-                                      </li>
+                                      <li key={i} className="text-xs text-cream/70 leading-relaxed bg-white/5 p-2 rounded-md border border-white/5">{insight}</li>
                                     ))}
                                   </ul>
                                 </div>
@@ -506,7 +580,6 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                                 </div>
                               </div>
 
-                              {/* Extra Playwright metrics */}
                               {session.analysis.metrics.stepsCompleted !== undefined && (
                                 <div className="flex gap-3">
                                   <div className="bg-ink-3 border border-rule p-3 rounded-xl flex-1">
@@ -524,9 +597,10 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                             </>
                           )}
 
+                          {/* Download buttons */}
                           <div className="flex items-center gap-3 pt-2">
                             {session.videoUrl && (
-                              <a href={session.videoUrl} download={`session_${session.id}.webm`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-rule text-cream text-xs transition-colors">
+                              <a href={session.videoUrl} download={`session_${session.id}.webm`} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-rule text-cream text-xs transition-colors">
                                 <Video size={14} /> Download Video
                               </a>
                             )}
@@ -539,27 +613,19 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                                 a.href = url; a.download = `transcript_${session.id}.txt`;
                                 document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
                               }}
-                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-rule text-cream text-xs transition-colors"
+                              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-rule text-cream text-xs transition-colors"
                             >
                               <Download size={14} /> Download Transcript
-                            </button>
-                            <button
-                              onClick={() => { if (confirm('Delete this session?')) setSavedSessions(prev => prev.filter(s => s.id !== session.id)); }}
-                              className="ml-auto p-2 rounded-xl hover:bg-red-500/10 text-cream-dim hover:text-red-400 transition-colors"
-                              title="Delete Session"
-                            >
-                              <Trash2 size={16} />
                             </button>
                           </div>
                         </div>
 
-                        {/* Detailed Action Transcript */}
-                        <div className="lg:w-96 bg-ink-3/50 border border-rule rounded-xl flex flex-col overflow-hidden max-h-[600px]">
-                          <div className="p-4 border-b border-rule bg-ink-2/80">
+                        {/* Transcript Panel */}
+                        <div className="lg:w-80 bg-ink-3/50 border border-rule rounded-xl flex flex-col overflow-hidden max-h-[500px]">
+                          <div className="p-3 border-b border-rule bg-ink-2/80">
                             <h4 className="text-[10px] font-mono uppercase tracking-widest text-cream-dim">Action Transcript</h4>
                           </div>
-
-                          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+                          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
                             {session.mode === 'playwright' && session.agentThoughts ? (
                               session.agentThoughts.map((t, idx) => (
                                 <div key={idx} className="flex flex-col gap-1 border-l-2 border-rule-2 pl-3 pb-2">
@@ -577,15 +643,9 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                                       <span className="text-node-tension">→</span> <span className="bg-ink-2 px-1 rounded truncate max-w-[200px]">{t.selector}</span>
                                     </div>
                                   )}
-                                  {t.value && (
-                                    <div className="text-[10px] font-mono text-cream-dim flex items-center gap-1.5">
-                                      <span className="text-node-idea">↳</span> Type: <span className="text-cream bg-white/5 px-1 rounded">"{t.value}"</span>
-                                    </div>
-                                  )}
                                 </div>
                               ))
                             ) : (
-                              // Vision fallback
                               session.narrations.map(n => (
                                 <div key={n.id} className="text-[11px] text-cream/80 leading-relaxed border-l-2 border-rule-2 pl-3 pb-2 flex flex-col gap-1">
                                   <span className="text-[9px] font-mono text-cream-dim/60">
@@ -598,10 +658,10 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    </motion.div>
+                  );
+                })()}
+              </AnimatePresence>
             </div>
 
             /* ════════ IDLE STATE — SETUP SCREEN ════════ */
