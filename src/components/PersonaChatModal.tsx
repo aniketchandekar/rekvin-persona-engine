@@ -66,7 +66,7 @@ Rules:
 2. Your tone should match the traits described.
 3. Keep responses relatively concise (2-4 sentences max).${contextBlocks}`;
 
-            const session = geminiService.createChatbot(systemInstruction, 'gemini-3.1-flash-preview');
+            const session = geminiService.createChatbot(systemInstruction, 'gemini-2.5-flash');
             setChatSession(session);
         };
         initChat();
