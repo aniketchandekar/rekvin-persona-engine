@@ -4,7 +4,7 @@ Rekvin is an AI-powered UX research and autonomous testing platform. It allows p
 
 ## 🚀 How it Uses Gen AI (Gemini SDK)
 
-This project is built from the ground up to showcase the multimodal, reasoning, and synthesis capabilities of the Google Gemini models (`gemini-2.0-flash`, `gemini-1.5-flash-8b`, and `gemini-3.1`).
+This project is built from the ground up to showcase the multimodal, reasoning, and synthesis capabilities of the Google Gemini models (`gemini-2.5-flash`, `gemini-2.5-pro`, and the `gemini-2.5-flash-native-audio-preview` Live API).
 
 ### 1. Multimodal Live Agent (`gemini-2.5-flash-native-audio-preview`)
 The core of the testing engine is a Playwright-driven agent loop powered by the **Gemini Multimodal Live API**.
@@ -45,9 +45,10 @@ After testing, the Metrics Hub is used to validate the persona model itself.
 ## 🛠 Technical Details
 - **Frontend:** React 19, Vite, Tailwind CSS (v4), Motion (Framer Motion).
 - **Visual Engine:** `@xyflow/react` (React Flow) v12 for the interactive canvases.
-- **Backend:** Node.js (Express) server running a Playwright-powered browser automation loop using the **Gemini Multimodal Live API**.
+- **Backend:** Node.js (Express) server running a Playwright-powered browser automation loop and acting as a secure Vertex AI proxy for frontend clients.
+- **Deployment:** Fully containerized via Docker and deployed to Google Cloud Run, utilizing Application Default Credentials (ADC) to interact with Vertex AI safely.
 - **Autoplay-Aware Audio Scheduling:** Custom Web Audio logic for zero-latency, gapless PCM audio output, with interaction-triggered initialization to bypass browser autoplay restrictions.
-- **AI SDK:** `@google/genai` (Google Generative AI SDK for Node.js).
+- **AI SDK:** `google-auth-library` and REST calls for Vertex AI, alongside `@google/genai` (where applicable).
 
 ## 🧠 The "Persona" Node Structure
 A Persona in Rekvin is more than just a description. It's a structured entity including:

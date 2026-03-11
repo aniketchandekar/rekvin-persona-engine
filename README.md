@@ -34,9 +34,16 @@ Rekvin is an AI-powered UX research platform that transforms static personas int
    npm run dev
    ```
 
+## ☁️ Deployment (Google Cloud Run)
+
+The application is fully containerized and configured for Google Cloud Run using **Vertex AI** and Application Default Credentials (ADC).
+1. Build the Docker image: `gcloud builds submit --tag gcr.io/[YOUR_PROJECT_ID]/rekvin-engine`
+2. Deploy to Cloud Run: `gcloud run deploy rekvin-engine --image gcr.io/[YOUR_PROJECT_ID]/rekvin-engine --platform managed --allow-unauthenticated --session-affinity`
+
 ## 🛠 Tech Stack
 
-- **AI Framework:** Google Gemini SDK (including **Multimodal Live API** with `gemini-2.1-flash-native-audio-preview`)
+- **AI Framework:** Google Cloud Vertex AI (Live API: `gemini-2.5-flash-native-audio-preview`, Analytics: `gemini-2.5-pro` & `gemini-2.5-flash`)
+- **Backend Architecture:** Secure Node.js proxy server relaying frontend AI calls to Vertex AI via ADC (`google-auth-library`), preventing API key exposure.
 - **Frontend:** React 19, Vite, Tailwind CSS (v4), Motion
 - **Visuals:** `@xyflow/react` (React Flow)
 - **Automation:** Playwright

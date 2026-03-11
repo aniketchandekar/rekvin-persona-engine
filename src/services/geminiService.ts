@@ -1,98 +1,97 @@
-import { GoogleGenAI, Modality, ThinkingLevel, Type } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export const geminiService = {
+  // Helper to call the backend proxy
+  async _proxyCall(model: string, contents: any, config: any = {}) {
+    const res = await fetch('/api/gemini/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, contents, config })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Gemini proxy error');
+    }
+    const data = await res.json();
+    return data;
+  },
+
   // 1. Conversational voice apps (Live API)
   // This will be handled in a React component since it requires Web Audio API and WebSocket state management.
 
   // 2. Google Search data
   async searchGrounding(query: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: query,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
+    const data = await this._proxyCall('gemini-2.5-flash-native-audio-preview-12-2025', query, {
+      tools: [{ googleSearch: {} }],
     });
     return {
-      text: response.text,
-      chunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks || [],
+      text: data.text,
+      chunks: [], // Grounding chunks are harder to proxy in one go, but text is enough for now
     };
   },
 
   // 3. Gemini intelligence (Pro for complex tasks)
   async complexTask(prompt: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: prompt,
-    });
-    return response.text;
+    const data = await this._proxyCall('gemini-2.5-pro', prompt);
+    return data.text;
   },
 
   // 4. AI powered chatbot
   createChatbot(
     systemInstruction = 'You are a helpful assistant for building personas.',
-    model = 'gemini-3.1-pro-preview'
+    model = 'gemini-2.5-pro'
   ) {
-    return ai.chats.create({
-      model: model,
-      config: {
-        systemInstruction: systemInstruction,
-      },
-    });
+    // For simple chat sessions in the frontend without complex history management,
+    // we'll use a simplified version that calls the proxy.
+    let history: any[] = [{ role: 'user', parts: [{ text: systemInstruction }] }, { role: 'model', parts: [{ text: "Understood." }] }];
+
+    return {
+      sendMessage: async ({ message }: { message: string }) => {
+        history.push({ role: 'user', parts: [{ text: message }] });
+        const data = await geminiService._proxyCall(model, history);
+        history.push({ role: 'model', parts: [{ text: data.text }] });
+        return { text: data.text };
+      }
+    };
   },
 
   // 5. Analyze images
   async analyzeImage(base64Image: string, mimeType: string, prompt: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: base64Image,
-              mimeType: mimeType,
-            },
+    const data = await this._proxyCall('gemini-2.5-pro', {
+      parts: [
+        {
+          inlineData: {
+            data: base64Image,
+            mimeType: mimeType,
           },
-          { text: prompt },
-        ],
-      },
+        },
+        { text: prompt },
+      ],
     });
-    return response.text;
+    return data.text;
   },
 
   async analyzeDocument(base64Data: string, mimeType: string, prompt: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: base64Data,
-              mimeType: mimeType,
-            },
+    const data = await this._proxyCall('gemini-2.5-pro', {
+      parts: [
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: mimeType,
           },
-          { text: prompt },
-        ],
-      },
+        },
+        { text: prompt },
+      ],
     });
-    return response.text;
+    return data.text;
   },
 
   // 6. Fast AI responses
   async fastResponse(prompt: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite-preview',
-      contents: prompt,
-    });
-    return response.text;
+    const data = await this._proxyCall('gemini-2.5-flash', prompt);
+    return data.text;
   },
 
   async generateInterviewTurn(prompt: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: `Context: We are building a user persona through a Socratic interview.
+    const data = await this._proxyCall('gemini-2.5-pro', `Context: We are building a user persona through a Socratic interview.
       ${prompt}
       
       Ask the next logical question to uncover their assumptions, context, or user behaviors. Keep it brief (1-2 sentences).
@@ -101,91 +100,61 @@ export const geminiService = {
       {
         "question": "The question text",
         "options": ["Option 1", "Option 2", "Option 3"]
-      }`,
-      config: {
-        responseMimeType: 'application/json',
-      }
+      }`, {
+      responseMimeType: 'application/json',
     });
-    return response.text;
+    return data.text;
   },
 
   async generateFields(nodeType: string, content: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite-preview',
-      contents: `Analyze this ${nodeType} node content: "${content}". Generate 3 short key-value pairs (max 2 words per value) representing metadata/stats for this node. Return ONLY a JSON object.`,
-      config: {
-        responseMimeType: 'application/json',
-      }
+    const data = await this._proxyCall('gemini-2.5-flash', `Analyze this ${nodeType} node content: "${content}". Generate 3 short key-value pairs (max 2 words per value) representing metadata/stats for this node. Return ONLY a JSON object.`, {
+      responseMimeType: 'application/json',
     });
-    return response.text;
+    return data.text;
   },
 
   // 7. Video understanding
   async analyzeVideo(prompt: string, base64Video: string, mimeType: string) {
-    // Note: Direct video analysis with base64 is supported via generateContent for some models,
-    // but for large videos, File API is preferred. Assuming small base64 for now or we can use a different approach.
-    // For this hackathon scope, we'll assume the user provides a base64 string or we use a text prompt describing a video.
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: base64Video,
-              mimeType: mimeType,
-            },
+    const data = await this._proxyCall('gemini-2.5-pro', {
+      parts: [
+        {
+          inlineData: {
+            data: base64Video,
+            mimeType: mimeType,
           },
-          { text: prompt },
-        ],
-      },
+        },
+        { text: prompt },
+      ],
     });
-    return response.text;
+    return data.text;
   },
 
   // 8. Generate speech
   async generateSpeech(text: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-tts',
-      contents: [{ parts: [{ text }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
-          },
-        },
-      },
-    });
-    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    // This modality is more complex to proxy. For now, we'll focus on the core chat features.
+    // PersonaChatModal already has its own logic for fetching TTS.
+    return null;
   },
 
   // 9. Think more when needed
   async thinkingTask(prompt: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: prompt,
-      config: {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-      },
+    const data = await this._proxyCall('gemini-2.5-pro', prompt, {
+      thinkingConfig: { thinkingLevel: 'HIGH' },
     });
-    return response.text;
+    return data.text;
   },
 
   // 10. Run Workflow Node
   async runWorkflowNode(targetNodeType: string, targetNodeLabel: string, previousNodeData: string) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
-      contents: `You are an AI assistant in a visual node editor. 
+    const data = await this._proxyCall('gemini-2.5-pro', `You are an AI assistant in a visual node editor. 
       The user is running a workflow. 
       The previous node's content is: "${previousNodeData}".
       Your task is to generate the content for the next node, which is a "${targetNodeType}" node labeled "${targetNodeLabel}".
       If you need more real-world information to complete this, use the Google Search tool.
-      Keep the generated content concise, insightful, and directly relevant to the previous node's context.`,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
+      Keep the generated content concise, insightful, and directly relevant to the previous node's context.`, {
+      tools: [{ googleSearch: {} }],
     });
-    return response.text;
+    return data.text;
   },
 
   async generateNodeInsights(nodeType: string, content: string, context: string): Promise<string> {
@@ -213,14 +182,10 @@ export const geminiService = {
     
     Keep all text extremely concise. Value should be prominent. Details and Verdict should be 1 sentence each.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite-preview',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-      }
+    const data = await this._proxyCall('gemini-2.5-flash', prompt, {
+      responseMimeType: 'application/json',
     });
-    return response.text;
+    return data.text;
   },
 
   async generateDiagnosticReport(sessionData: any[], metricResults: any[]): Promise<any> {
@@ -249,41 +214,37 @@ export const geminiService = {
     }`;
 
     return this.generateJSON(prompt, {
-      type: Type.OBJECT,
+      type: 'OBJECT',
       properties: {
         personaFit: {
-          type: Type.OBJECT,
+          type: 'OBJECT',
           properties: {
-            score: { type: Type.STRING },
-            assessment: { type: Type.STRING }
+            score: { type: 'STRING' },
+            assessment: { type: 'STRING' }
           }
         },
         productFixes: {
-          type: Type.ARRAY,
+          type: 'ARRAY',
           items: {
-            type: Type.OBJECT,
+            type: 'OBJECT',
             properties: {
-              priority: { type: Type.STRING },
-              issue: { type: Type.STRING },
-              recommendation: { type: Type.STRING }
+              priority: { type: 'STRING' },
+              issue: { type: 'STRING' },
+              recommendation: { type: 'STRING' }
             }
           }
         }
       }
-    }, 'gemini-3-flash-preview');
+    }, 'gemini-2.5-flash');
   },
 
-  async generateJSON(prompt: string, schema: any, modelStr: string = 'gemini-3.1-pro-preview') {
-    const response = await ai.models.generateContent({
-      model: modelStr,
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: schema,
-      }
+  async generateJSON(prompt: string, schema: any, modelStr: string = 'gemini-2.5-pro') {
+    const data = await this._proxyCall(modelStr, prompt, {
+      responseMimeType: 'application/json',
+      responseSchema: schema,
     });
     try {
-      return JSON.parse(response.text || '{}');
+      return JSON.parse(data.text || '{}');
     } catch (e) {
       console.error("Failed to parse Gemini JSON response", e);
       return {};

@@ -1,16 +1,102 @@
 import express from 'express';
+import http from 'http';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { chromium, type Browser, type Page } from 'playwright';
 import WebSocket, { WebSocketServer } from 'ws';
+import { GoogleAuth } from 'google-auth-library';
 import 'dotenv/config';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
+const server = http.createServer(app);
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GCP_PROJECT_ID = 'rekvin-v0';
+const GCP_LOCATION = 'us-central1';
 const LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
-const LIVE_WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
+
+// Server-side Gemini proxy for the frontend
+// Uses google-auth-library (ADC) + direct Vertex AI REST API
+// This avoids @google/genai ESM module import issues on Cloud Run
+app.post('/api/gemini/proxy', async (req, res) => {
+    const { model: modelName, contents, config } = req.body;
+    const model = modelName || 'gemini-2.0-flash';
+    try {
+        const accessToken = await getAccessToken();
+        const endpoint = `https://${GCP_LOCATION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/publishers/google/models/${model}:generateContent`;
+
+        let formattedContents = contents;
+        if (typeof contents === 'string') {
+            formattedContents = [{ role: 'user', parts: [{ text: contents }] }];
+        } else if (Array.isArray(contents)) {
+            if (contents.length > 0 && !contents[0].role) {
+                formattedContents = [{ role: 'user', parts: contents }];
+            }
+        } else if (typeof contents === 'object' && contents !== null) {
+            if (contents.parts) {
+                formattedContents = [{ role: 'user', parts: contents.parts }];
+            } else {
+                formattedContents = [{ role: 'user', parts: [contents] }];
+            }
+        }
+
+        const body: any = { contents: formattedContents };
+        if (config?.responseMimeType || config?.responseSchema) {
+            body.generationConfig = {};
+            if (config.responseMimeType) body.generationConfig.responseMimeType = config.responseMimeType;
+            if (config.responseSchema) body.generationConfig.responseSchema = config.responseSchema;
+        }
+        if (config?.systemInstruction) {
+            body.systemInstruction = config.systemInstruction;
+        }
+        if (config?.tools) {
+            body.tools = config.tools;
+        }
+
+        const apiRes = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify(body),
+        });
+
+        if (!apiRes.ok) {
+            const errText = await apiRes.text();
+            console.error('Vertex AI proxy error response:', errText);
+            return res.status(apiRes.status).json({ error: errText });
+        }
+
+        const data: any = await apiRes.json();
+        // Extract text from first candidate
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+        res.json({ text, raw: data });
+    } catch (err: any) {
+        console.error('Gemini proxy error:', err);
+        res.status(500).json({ error: err?.message || 'Gemini proxy error' });
+    }
+});
+
+// API routes should come BEFORE static serving
+
+// Use the Vertex AI endpoint for the Multimodal Live API
+const LIVE_WS_URL = `wss://${GCP_LOCATION}-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent`;
+
+const auth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
+});
+
+async function getAccessToken() {
+    const client = await auth.getClient();
+    const token = await client.getAccessToken();
+    return token.token;
+}
 
 // ── SSE client registry ──────────────────────────────────────────────
 const sseClients = new Map<string, express.Response>();
@@ -263,11 +349,14 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
 
         sendEvent(sessionId, 'status', {
             status: 'running',
-            message: `Page loaded. Connecting to Gemini Live API...`,
+            message: `Page loaded. Connecting to Vertex AI Live API...`,
         });
 
-        // ── 3. OPEN GEMINI LIVE API WEBSOCKET ────────────────────────────
-        const geminiWs = new WebSocket(LIVE_WS_URL);
+        // ── 3. OPEN VERTEX AI LIVE API WEBSOCKET ─────────────────────────
+        const accessToken = await getAccessToken();
+        const geminiWs = new WebSocket(LIVE_WS_URL, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
         session.geminiWs = geminiWs;
 
         await new Promise<void>((resolve, reject) => {
@@ -277,7 +366,7 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
                 // Send initial configuration
                 const configMessage = {
                     setup: {
-                        model: `models/${LIVE_MODEL}`,
+                        model: `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/publishers/google/models/${LIVE_MODEL}`,
                         generationConfig: {
                             responseModalities: ['AUDIO'],
                             speechConfig: {
@@ -627,7 +716,12 @@ async function generateAnalysis(sessionId: string, persona: any, totalSteps: num
 
     try {
         const { GoogleGenAI } = await import('@google/genai');
-        const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+        // Initialize GenAI for Vertex AI usage
+        const ai = new (GoogleGenAI as any)({
+            vertex: true,
+            project: GCP_PROJECT_ID,
+            location: GCP_LOCATION,
+        });
 
         const prompt = `You are a UX research analyst.
 An AI persona ("${persona.label}": ${persona.content || ''}) just autonomously navigated a web application for ${totalSteps} steps using Gemini Live API.
@@ -696,13 +790,21 @@ function wrapPcmInWav(pcmBase64: string): string {
 
 // ══════════════════════════════════════════════════════════════════════
 //  START SERVER
-// ══════════════════════════════════════════════════════════════════════
+// Serve built frontend files from the 'dist' directory
+app.use(express.static(path.join(__dirname, '../../dist')));
 
-const PORT = 3001;
-const server = app.listen(PORT, () => {
-    console.log(`\n🤖 Agent server running on http://localhost:${PORT}`);
-    console.log(`   Health check: http://localhost:${PORT}/api/health`);
-    console.log(`   Live API model: ${LIVE_MODEL}\n`);
+// Fallback for SPA routing - catch-all must be LAST
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../dist/index.html'));
+});
+
+// ── Startup ──────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, () => {
+    console.log(`\n🤖 Rekvin engine running on port ${PORT}`);
+    console.log(`   Mode: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`   Project ID: ${GCP_PROJECT_ID}`);
+    console.log(`   Vertex AI Model: ${LIVE_MODEL}\n`);
 });
 
 // ══════════════════════════════════════════════════════════════════════
@@ -726,7 +828,7 @@ wss.on('connection', (ws, req) => {
     let geminiWs: WebSocket | null = null;
     let isConnected = false;
 
-    ws.on('message', (message) => {
+    ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message.toString());
 
@@ -734,14 +836,17 @@ wss.on('connection', (ws, req) => {
                 const persona = data.persona;
                 const personaPrompt = buildPersonaPrompt(persona);
 
-                geminiWs = new WebSocket(LIVE_WS_URL);
+                const accessToken = await getAccessToken();
+                geminiWs = new WebSocket(LIVE_WS_URL, {
+                    headers: { Authorization: `Bearer ${accessToken}` }
+                });
 
                 geminiWs.on('open', () => {
-                    console.log('[Vision Mode] Connected to Gemini Live API');
+                    console.log('[Vision Mode] Connected to Vertex AI Live API');
                     isConnected = true;
                     const configMessage = {
                         setup: {
-                            model: `models/${LIVE_MODEL}`,
+                            model: `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/publishers/google/models/${LIVE_MODEL}`,
                             generationConfig: {
                                 responseModalities: ['AUDIO'],
                                 speechConfig: {
