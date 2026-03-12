@@ -27,7 +27,7 @@ export function usePlaywrightAgent() {
     const hasPcmAudioRef = useRef<boolean>(false);
     // TTS speech queue for reliable, non-overlapping speech
     const ttsSpeakingRef = useRef<boolean>(false);
-    const ttsQueueRef = useRef<string[]>([]);
+    const ttsQueueRef = useRef<{ text: string; onStart?: () => void }[]>([]);
     const ttsUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
     // Schedules a raw PCM base64 chunk (24kHz, 16-bit, mono) into a gapless audio stream
@@ -79,21 +79,21 @@ export function usePlaywrightAgent() {
 
     // ── TTS FALLBACK SPEECH ────────────────────────────────────────────────
     // Queue text to speak via browser SpeechSynthesis when PCM audio is unavailable
-    const speakText = useCallback((text: string) => {
+    const speakText = useCallback((text: string, onStart?: () => void) => {
         if (!text || text.trim().length === 0) return;
-        ttsQueueRef.current.push(text);
+        ttsQueueRef.current.push({ text, onStart });
         processTtsQueue();
     }, []);
 
     const processTtsQueue = useCallback(() => {
         if (ttsSpeakingRef.current || ttsQueueRef.current.length === 0) return;
-        const text = ttsQueueRef.current.shift();
-        if (!text) return;
+        const item = ttsQueueRef.current.shift();
+        if (!item) return;
 
         ttsSpeakingRef.current = true;
         setIsSpeaking(true);
 
-        const utterance = new SpeechSynthesisUtterance(text);
+        const utterance = new SpeechSynthesisUtterance(item.text);
         ttsUtteranceRef.current = utterance;
 
         // Pick a natural-sounding voice
@@ -104,6 +104,11 @@ export function usePlaywrightAgent() {
         utterance.rate = 1.05;
         utterance.pitch = 1.0;
         utterance.volume = 1.0;
+
+        // Reveal transcript text when speech actually begins
+        utterance.onstart = () => {
+            if (item.onStart) item.onStart();
+        };
 
         utterance.onend = () => {
             ttsSpeakingRef.current = false;
@@ -117,6 +122,8 @@ export function usePlaywrightAgent() {
         utterance.onerror = () => {
             ttsSpeakingRef.current = false;
             ttsUtteranceRef.current = null;
+            // Still reveal text even if speech fails
+            if (item.onStart) item.onStart();
             processTtsQueue();
         };
 
@@ -275,9 +282,7 @@ export function usePlaywrightAgent() {
         evtSource.addEventListener('thought', (e) => {
             const data: AgentThought = JSON.parse((e as MessageEvent).data);
             setThoughts(prev => [...prev, data]);
-            if (data.thought && !hasPcmAudioRef.current) {
-                speakText(data.thought);
-            }
+            // Thoughts are tool-call actions; speech comes from agent_transcript only
         });
 
         evtSource.addEventListener('action_result', (e) => {
@@ -317,10 +322,12 @@ export function usePlaywrightAgent() {
         evtSource.addEventListener('agent_transcript', (e) => {
             const data = JSON.parse((e as MessageEvent).data);
             const text = data.text || '';
-            setAgentTranscript(text);
-            // Speak via TTS if no real PCM audio is being received
             if (text && !hasPcmAudioRef.current) {
-                speakText(text);
+                // Defer showing transcript until TTS actually starts speaking
+                speakText(text, () => setAgentTranscript(text));
+            } else {
+                // If PCM audio is active, show transcript immediately (audio is already playing)
+                setAgentTranscript(text);
             }
         });
 
