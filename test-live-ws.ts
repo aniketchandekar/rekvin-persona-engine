@@ -50,7 +50,49 @@ async function run() {
     });
 
     geminiWs.on('message', (data) => {
-        console.log('Received message:', data.toString());
+        const response = JSON.parse(data.toString());
+        console.log('Received message type(s):', Object.keys(response));
+        
+        if (response.setupComplete) {
+            console.log('Setup complete. Sending initial message...');
+            const initialMessage = {
+                clientContent: {
+                    turns: [{
+                        role: 'user',
+                        parts: [{ text: 'Hello, please say something to test the audio.' }]
+                    }],
+                    turnComplete: true
+                }
+            };
+            geminiWs.send(JSON.stringify(initialMessage));
+            return;
+        }
+
+        if (response.serverContent) {
+            console.log('serverContent keys:', Object.keys(response.serverContent));
+            const sc = response.serverContent;
+            if (sc.modelTurn) {
+                console.log('modelTurn keys:', Object.keys(sc.modelTurn));
+                if (sc.modelTurn.parts) {
+                    sc.modelTurn.parts.forEach((p: any, i: number) => {
+                        console.log(`Part ${i} keys:`, Object.keys(p));
+                        if (p.inlineData) console.log(`Part ${i} has inlineData`);
+                        if (p.inline_data) console.log(`Part ${i} has inline_data (SNAKE_CASE!)`);
+                    });
+                }
+            }
+            if (sc.outputTranscription) {
+                console.log('outputTranscription present');
+            }
+            if (sc.output_transcription) {
+                console.log('output_transcription present (SNAKE_CASE!)');
+            }
+        }
+        
+        // Also check root for snake_case
+        if (response.server_content) {
+            console.log('server_content present (SNAKE_CASE!)');
+        }
     });
 
     geminiWs.on('error', (err) => {
