@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Brain, Monitor, Play, Square, Sparkles, Link as LinkIcon, Trash2, AlertCircle, Download, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Save, Video, Bot, Eye, ExternalLink, MessageSquare, Target, Mic, MicOff, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Brain, Monitor, Play, Square, Sparkles, Link as LinkIcon, Trash2, AlertCircle, Download, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Save, Video, Bot, Eye, ExternalLink, MessageSquare, Target, Mic, MicOff, ChevronDown, ChevronUp, X, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Type } from '@google/genai';
 import { SavedSession, Narration } from '../types';
@@ -25,11 +25,13 @@ const ACTION_COLORS: Record<string, string> = {
 
 import { PRESET_PERSONAS } from '../constants/presets';
 
-export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, activeTab, setActiveTab, devMode, onOpenChat }: { savedPersonas: any[], savedSessions: SavedSession[], setSavedSessions: React.Dispatch<React.SetStateAction<SavedSession[]>>, activeTab: 'simulation' | 'saved', setActiveTab: (tab: 'simulation' | 'saved') => void, devMode: boolean, onOpenChat: (persona: any, sessionData?: any) => void }) {
+export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, activeTab: parentActiveTab, setActiveTab: setParentActiveTab, devMode, onOpenChat }: { savedPersonas: any[], savedSessions: SavedSession[], setSavedSessions: React.Dispatch<React.SetStateAction<SavedSession[]>>, activeTab: 'simulation' | 'saved', setActiveTab: (tab: 'simulation' | 'saved') => void, devMode: boolean, onOpenChat: (persona: any, sessionData?: any) => void }) {
   const [activePersona, setActivePersona] = useState<any | null>(null);
   const [targetUrl, setTargetUrl] = useState<string>('');
   const [agentGoal, setAgentGoal] = useState<string>('');
   const [testMode, setTestMode] = useState<'vision' | 'playwright'>('playwright');
+  const [sidebarTab, setSidebarTab] = useState<'actions' | 'transcription'>('actions');
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
 
   // ── Vision mode state ─────────────────────────────────────────────
   const [visionStatus, setVisionStatus] = useState<'idle' | 'running' | 'completed'>('idle');
@@ -39,7 +41,6 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   const [error, setError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<SavedSession['analysis'] | null>(null);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
   const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
 
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   const visionWsRef = useRef<WebSocket | null>(null);
   const audioQueueRef = useRef<string[]>([]);
   const isPlayingRef = useRef<boolean>(false);
+  const transcriptsEndRef = useRef<HTMLDivElement>(null);
 
   const playNextAudio = () => {
     if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
@@ -69,7 +71,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
 
   // ── Playwright mode state ─────────────────────────────────────────
   const playwright = usePlaywrightAgent();
-  const { isSpeaking, isMicActive, toggleMic, userTranscript, agentTranscript } = playwright;
+  const { isSpeaking, isMicActive, toggleMic, userTranscript, agentTranscript, transcripts } = playwright;
 
   // Derived combined status for the UI
   const isIdle = testMode === 'vision' ? visionStatus === 'idle' : playwright.status === 'idle';
@@ -82,7 +84,17 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
     if (narrationsEndRef.current) {
       narrationsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [narrations, playwright.thoughts]);
+    if (transcriptsEndRef.current) {
+      transcriptsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [narrations, playwright.thoughts, transcripts]);
+
+  // Auto-switch to transcription tab when mic is turned on
+  useEffect(() => {
+    if (playwright.isMicActive) {
+      setSidebarTab('transcription');
+    }
+  }, [playwright.isMicActive]);
 
   // ── Drag & Drop ───────────────────────────────────────────────────
   const handleDragStart = (e: React.DragEvent, persona: any) => {
@@ -247,10 +259,13 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   };
 
   const handleStop = () => {
-    if (testMode === 'vision') stopVisionTest();
-    else playwright.stopTest();
+    if (testMode === 'vision') {
+      setVisionStatus('completed');
+    } else {
+      playwright.stopTest();
+    }
+    setParentActiveTab('saved');
   };
-
   // ══════════════════════════════════════════════════════════════════
   //  SAVE SESSION (UNIFIED)
   // ══════════════════════════════════════════════════════════════════
@@ -276,8 +291,8 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
       }));
       const newSession: SavedSession = {
         id: Date.now().toString(), date: Date.now(),
-        personaLabel: activePersona.data.label,
-        personaContent: activePersona.data.content,
+        personaLabel: activePersona?.data.label || 'Agent',
+        personaContent: activePersona?.data.content || '',
         targetUrl, videoUrl: null, narrations: convertedNarrations,
         analysis: pwAnalysis ? {
           story: pwAnalysis.story,
@@ -293,7 +308,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
 
     // Reset
     resetAll();
-    setActiveTab('saved');
+    setParentActiveTab('saved');
   };
 
   const resetAll = () => {
@@ -333,7 +348,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   return (
     <div className="absolute inset-0 flex bg-ink">
       {/* ── Left Sidebar Toggle ──────────────────────────────────────── */}
-      {activeTab === 'simulation' && (
+      {parentActiveTab === 'simulation' && (
         <div className="absolute top-4 left-4 z-20">
           <button
             onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
@@ -347,7 +362,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
 
       {/* ── Left Sidebar ─────────────────────────────────────────────── */}
       <AnimatePresence>
-        {activeTab === 'simulation' && leftSidebarOpen && (
+        {parentActiveTab === 'simulation' && leftSidebarOpen && (
           <motion.div
             initial={{ width: 0, opacity: 0, x: -20 }}
             animate={{ width: 320, opacity: 1, x: 0 }}
@@ -414,7 +429,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
         <div className="flex-1 p-4 pt-14 flex flex-col items-center justify-center overflow-y-auto">
 
           {/* ════════ SAVED SESSIONS TAB ════════ */}
-          {activeTab === 'saved' ? (
+          {parentActiveTab === 'saved' ? (
             <div className="w-full max-w-4xl flex flex-col gap-6">
               <h2 className="font-display text-2xl tracking-widest text-cream mb-2">Saved Sessions</h2>
               {savedSessions.length === 0 ? (
@@ -904,7 +919,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                 </div>
               </div>
 
-              {/* ── Right Sidebar: Thought Stream ────────────────────────── */}
+              {/* ── Right Sidebar ────────────────────────── */}
               <AnimatePresence>
                 {rightSidebarOpen && (
                   <motion.div
@@ -914,6 +929,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                     className="flex flex-col gap-3 shrink-0 overflow-hidden"
                   >
                     <div className="w-[320px] flex flex-col gap-3 h-full">
+                      {/* Persona Header */}
                       <div className="bg-ink-2 border border-rule-2 rounded-xl p-3 flex items-center gap-2.5">
                         <div className="w-10 h-10 rounded-full bg-node-persona/20 flex items-center justify-center shrink-0">
                           <Brain className="text-node-persona" size={20} />
@@ -921,7 +937,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                         <div>
                           <div className="text-xs text-node-persona font-mono uppercase tracking-widest mb-0.5">Testing As</div>
                           <div className="text-sm font-medium text-cream flex items-center gap-2 truncate">
-                            {activePersona?.data.label}
+                            {activePersona?.data.label || 'Agent'}
                             {isSpeaking && (
                               <div className="flex items-center gap-0.5">
                                 <motion.div animate={{ height: [4, 12, 4] }} transition={{ repeat: Infinity, duration: 0.8 }} className="w-1 bg-node-idea rounded-full" />
@@ -932,110 +948,166 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                           </div>
                         </div>
                         {testMode === 'playwright' && (
-                          <span className="ml-auto text-[9px] font-mono uppercase px-2 py-1 rounded-full bg-node-idea/20 text-node-idea">🤖 Live API</span>
+                          <span className="ml-auto text-[9px] font-mono uppercase px-2 py-1 rounded-full bg-node-idea/20 text-node-idea">🤖 Live</span>
                         )}
                       </div>
 
-                      {/* Live Transcription Panel */}
-                      {testMode === 'playwright' && (userTranscript || agentTranscript) && (
-                        <div className="bg-ink-3/50 border border-rule-2 rounded-xl p-3 flex flex-col gap-2">
-                          <div className="text-[9px] font-mono uppercase tracking-widest text-cream-dim flex items-center gap-1.5">
-                            <Mic size={10} /> Live Transcription
-                          </div>
-                          {userTranscript && (
-                            <div className="flex items-start gap-2">
-                              <span className="text-[9px] font-mono text-node-journey bg-node-journey/10 px-1.5 py-0.5 rounded shrink-0">You</span>
-                              <span className="text-[11px] text-cream/80 leading-snug italic">"{userTranscript}"</span>
-                            </div>
+                      {/* Tab Switcher */}
+                      <div className="flex bg-ink-2 border border-rule-2 rounded-xl p-1 shrink-0">
+                        <button
+                          onClick={() => setSidebarTab('actions')}
+                          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-mono uppercase tracking-wider transition-all ${
+                            sidebarTab === 'actions' 
+                              ? 'bg-ink-3 text-cream border border-rule-2 shadow-sm' 
+                              : 'text-cream-dim hover:text-cream'
+                          }`}
+                        >
+                          <Activity size={12} />
+                          Actions
+                        </button>
+                        <button
+                          onClick={() => setSidebarTab('transcription')}
+                          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-mono uppercase tracking-wider transition-all relative ${
+                            sidebarTab === 'transcription'
+                              ? 'bg-ink-3 text-cream border border-rule-2 shadow-sm'
+                              : 'text-cream-dim hover:text-cream'
+                          }`}
+                        >
+                          <Mic size={12} className={playwright.isMicActive ? "text-node-journey animate-pulse" : ""} />
+                          Transcribe
+                          {playwright.isMicActive && (
+                            <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-node-journey shadow-[0_0_8px_rgba(var(--node-journey-rgb),0.6)]" />
                           )}
-                          {agentTranscript && (
-                            <div className="flex items-start gap-2">
-                              <span className="text-[9px] font-mono text-node-idea bg-node-idea/10 px-1.5 py-0.5 rounded shrink-0">Agent</span>
-                              <span className="text-[11px] text-cream/80 leading-snug italic">"{agentTranscript}"</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                        </button>
+                      </div>
 
-                      {/* Thought stream */}
-                      <div className="flex-1 bg-ink-2 border border-rule-2 rounded-xl flex flex-col overflow-hidden">
-                        <div className="p-3 border-b border-rule-2 bg-ink-3 flex items-center justify-between">
-                          <span className="text-xs font-mono uppercase tracking-widest text-cream-dim">
-                            {isRunning ? (testMode === 'playwright' ? 'Live Agent Actions' : 'Live Narration') : 'Session Log'}
-                          </span>
-                          {(isThinking || playwright.status === 'running') && <Sparkles size={14} className="text-node-idea animate-pulse" />}
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-                          <AnimatePresence initial={false}>
-                            {testMode === 'vision' ? (
-                              /* Vision mode: narrations */
-                              narrations.map((narration) => (
-                                <motion.div
-                                  key={narration.id}
-                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  className="bg-ink-3 border border-rule rounded-xl p-3 text-sm text-cream/80 leading-relaxed shadow-sm relative"
-                                >
-                                  <div className="absolute -left-1.5 top-4 w-3 h-3 bg-ink-3 border border-rule rotate-45" />
-                                  <div className="relative z-10">{narration.text}</div>
-                                </motion.div>
-                              ))
-                            ) : (
-                              /* Playwright mode: structured thoughts */
-                              playwright.thoughts.map((thought, i) => (
-                                <motion.div
-                                  key={i}
-                                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  className="bg-ink-3 border border-rule rounded-xl p-3 shadow-sm relative"
-                                >
-                                  <div className="absolute -left-1.5 top-4 w-3 h-3 bg-ink-3 border border-rule rotate-45" />
-                                  <div className="relative z-10">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <span className="text-[10px] font-mono text-cream-dim w-5 shrink-0">{thought.step + 1}.</span>
-                                      <span className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded-full ${ACTION_COLORS[thought.action] || 'text-cream-dim bg-white/10'}`}>
-                                        {thought.action}
-                                      </span>
-                                      {thought.selector && (
-                                        <code className="text-[9px] text-cream-dim/60 font-mono truncate max-w-[140px]">{thought.selector}</code>
-                                      )}
-                                    </div>
-                                    <p className="text-sm text-cream/80 leading-relaxed">{thought.thought}</p>
-                                    {thought.value && (
-                                      <div className="mt-1 text-[10px] text-node-journey font-mono">Typed: "{thought.value}"</div>
-                                    )}
-                                    {thought.reason && (
-                                      <div className="mt-1 text-[10px] text-node-tension">Reason: {thought.reason}</div>
-                                    )}
-                                  </div>
-                                </motion.div>
-                              ))
+                      <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+                        {sidebarTab === 'transcription' ? (
+                          /* ── Transcription Tab ── */
+                          <div className="bg-ink-3/50 border border-rule-2 rounded-xl p-0 flex flex-col gap-4 relative overflow-hidden h-full shadow-inner">
+                            {playwright.isMicActive && (
+                              <div className="absolute top-0 left-0 w-1 h-full bg-node-journey animate-pulse z-10" />
                             )}
-                          </AnimatePresence>
-
-                          {/* Status message */}
-                          {testMode === 'playwright' && playwright.statusMessage && playwright.status !== 'idle' && (
-                            <div className="text-[10px] text-cream-dim italic text-center py-2">
-                              {playwright.statusMessage}
+                            
+                            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 scrollbar-thin">
+                              {transcripts.length > 0 ? (
+                                transcripts.map((t, i) => (
+                                  <motion.div 
+                                    key={i} 
+                                    initial={{ opacity: 0, y: 10, x: t.role === 'user' ? -10 : 10 }} 
+                                    animate={{ opacity: 1, y: 0, x: 0 }} 
+                                    className={`flex flex-col gap-1 ${t.role === 'user' ? 'items-start' : 'items-end'}`}
+                                  >
+                                    <span className={`text-[10px] font-mono uppercase tracking-wider ${t.role === 'user' ? 'text-node-journey ml-1' : 'text-node-idea mr-1'}`}>
+                                      {t.role === 'user' ? 'You' : 'Agent'}
+                                    </span>
+                                    <div className={`p-3 text-sm text-cream/90 leading-relaxed max-w-[85%] rounded-2xl ${
+                                      t.role === 'user' 
+                                        ? 'bg-node-journey/10 border border-node-journey/20 rounded-tl-sm' 
+                                        : 'bg-node-idea/10 border border-node-idea/20 rounded-tr-sm text-right'
+                                    }`}>
+                                      {t.text}
+                                    </div>
+                                  </motion.div>
+                                ))
+                              ) : (
+                                <div className="flex flex-col items-center justify-center p-8 text-center h-full opacity-40">
+                                  <Mic size={32} className="mb-4 text-cream-dim" />
+                                  <p className="text-xs text-cream-dim leading-relaxed">
+                                    No transcription yet. <br/> Turn on microphone to chat.
+                                  </p>
+                                </div>
+                              )}
+                              <div ref={transcriptsEndRef} />
                             </div>
-                          )}
 
-                          {/* Playwright insights panel */}
-                          {testMode === 'playwright' && playwright.analysis?.insights && playwright.analysis.insights.length > 0 && (
-                            <div className="mt-2 bg-node-idea/10 border border-node-idea/20 rounded-xl p-3">
-                              <div className="text-[10px] font-mono uppercase tracking-widest text-node-idea mb-2 flex items-center gap-1.5">
-                                <Sparkles size={12} /> Key Insights
+                            {playwright.isMicActive && (
+                              <div className="mt-auto p-4 bg-ink-3/80 border-t border-rule-2 text-[10px] text-cream-dim/60 flex flex-col gap-2 shrink-0">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-node-journey animate-pulse" />
+                                  <span className="font-medium text-cream/70">Conversation Mode Active</span>
+                                </div>
+                                <p className="leading-relaxed">Testing is paused while mic is on. Switch off mic to resume navigation.</p>
                               </div>
-                              <ul className="flex flex-col gap-1.5">
-                                {playwright.analysis.insights.map((insight, i) => (
-                                  <li key={i} className="text-[11px] text-cream/70 leading-relaxed">• {insight}</li>
-                                ))}
-                              </ul>
+                            )}
+                          </div>
+                        ) : (
+                          /* ── Actions Tab ── */
+                          <div className="flex-1 bg-ink-2 border border-rule-2 rounded-xl flex flex-col overflow-hidden shadow-inner">
+                            <div className="p-3 border-b border-rule-2 bg-ink-3 flex items-center justify-between shrink-0">
+                              <span className="text-[10px] font-mono uppercase tracking-widest text-cream-dim">
+                                {isRunning ? (testMode === 'playwright' ? 'Agent Actions' : 'Narration') : 'Session Log'}
+                              </span>
+                              {(isThinking || playwright.status === 'running') && <Sparkles size={12} className="text-node-idea animate-pulse" />}
                             </div>
-                          )}
+                            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 scrollbar-thin">
+                              <AnimatePresence initial={false}>
+                                {testMode === 'vision' ? (
+                                  narrations.map((narration) => (
+                                    <motion.div
+                                      key={narration.id}
+                                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                                      className="bg-ink-3 border border-rule rounded-xl p-3 text-sm text-cream/80 leading-relaxed shadow-sm relative"
+                                    >
+                                      <div className="absolute -left-1.5 top-4 w-3 h-3 bg-ink-3 border border-rule rotate-45" />
+                                      <div className="relative z-10">{narration.text}</div>
+                                    </motion.div>
+                                  ))
+                                ) : (
+                                  playwright.thoughts.map((thought, i) => (
+                                    <motion.div
+                                      key={i}
+                                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                                      className="bg-ink-3 border border-rule rounded-xl p-3 shadow-sm relative shrink-0"
+                                    >
+                                      <div className="absolute -left-1.5 top-4 w-3 h-3 bg-ink-3 border border-rule rotate-45" />
+                                      <div className="relative z-10">
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <span className="text-[10px] font-mono text-cream-dim w-5 shrink-0">{thought.step + 1}.</span>
+                                          <span className={`text-[9px] font-mono uppercase px-2 py-0.5 rounded-full ${ACTION_COLORS[thought.action] || 'text-cream-dim bg-white/10'}`}>
+                                            {thought.action}
+                                          </span>
+                                          {thought.selector && (
+                                            <code className="text-[9px] text-cream-dim/60 font-mono truncate max-w-[140px]">{thought.selector}</code>
+                                          )}
+                                        </div>
+                                        <p className="text-sm text-cream/80 leading-relaxed">{thought.thought}</p>
+                                        {thought.value && (
+                                          <div className="mt-1 text-[10px] text-node-journey font-mono">Typed: "{thought.value}"</div>
+                                        )}
+                                        {thought.reason && (
+                                          <div className="mt-1 text-[10px] text-node-tension">Reason: {thought.reason}</div>
+                                        )}
+                                      </div>
+                                    </motion.div>
+                                  ))
+                                )}
+                              </AnimatePresence>
 
-                          <div ref={narrationsEndRef} />
-                        </div>
+                              {testMode === 'playwright' && playwright.statusMessage && playwright.status !== 'idle' && (
+                                <div className="text-[10px] text-cream-dim italic text-center py-2">
+                                  {playwright.statusMessage}
+                                </div>
+                              )}
+
+                              {testMode === 'playwright' && playwright.analysis?.insights && playwright.analysis.insights.length > 0 && (
+                                <div className="mt-2 bg-node-idea/10 border border-node-idea/20 rounded-xl p-3">
+                                  <div className="text-[10px] font-mono uppercase tracking-widest text-node-idea mb-2 flex items-center gap-1.5">
+                                    <Sparkles size={12} /> Key Insights
+                                  </div>
+                                  <ul className="flex flex-col gap-1.5">
+                                    {playwright.analysis.insights.map((insight, i) => (
+                                      <li key={i} className="text-[11px] text-cream/70 leading-relaxed">• {insight}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              <div ref={narrationsEndRef} />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -1047,7 +1119,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                 <button
                   onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
                   className="p-2 rounded-lg backdrop-blur-md bg-ink-3/90 border border-rule-2 text-cream-dim hover:text-cream hover:border-cream/30 transition-colors shadow-lg"
-                  title={rightSidebarOpen ? "Hide Transcript" : "Show Transcript"}
+                  title={rightSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}
                 >
                   {rightSidebarOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
                 </button>

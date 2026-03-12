@@ -10,14 +10,14 @@ This project is built from the ground up to showcase the multimodal, reasoning, 
 The core of the testing engine is a Playwright-driven agent loop powered by the **Vertex AI Multimodal Live API**.
 - **1FPS Real-Time Vision:** Instead of static polling, the agent streams the browser's viewport at 1 frame per second. Gemini "sees" the UI continuously to understand animations, state changes, and interactive flow.
 - **Autonomous Initialization:** The agent immediately begins its testing session upon page load, narrating its first impressions and taking actions without requiring initial user input.
+- **Cognitive Context Injection:** When the user engages in conversation, Rekvin automatically injects a summary of the current **Session Log** into the agent's turn. This ensures the agent remembers what it just did, enabling intelligent answers to questions like "Why did you click that?".
 - **Multimodal Tool Use:** Gemini uses function calling to control Playwright directly (click, type, scroll, wait), closing the loop between vision and action.
-- **Optional Session Goals:** Agents can either be given a specific objective (e.g., "Find the checkout page") or explore the application freely to discover friction points.
-- **Hybrid Audio Reliability:** The engine uses a dual-path speech system. While it leverages the low-latency raw PCM stream from Vertex AI, it also implements a **Web Speech TTS fallback**. If the PCM stream is suppressed (common during tool execution), the system immediately reads the agent's transcript aloud using the browser's internal speech engine, ensuring zero silence.
 
-### 2. User Voice Intervention & Barge-in
+### 2. User Voice Intervention & Chat UI
 Rekvin enables a uniquely collaborative research flow via the Multimodal Live API.
 - **Real-Time Guidance:** Users can activate their microphone at any time to speak to the autonomous agent. 
 - **Barge-in Support:** You can interrupt the agent's narration or redirect its testing strategy mid-session. The agent listens to your voice stream while simultaneously processing its vision and audio output.
+- **Smart Transcript Grouping:** A dedicated **Transcription Hub** uses a grouping heuristic to combine streaming, word-by-word transcripts into clean, readable chat bubbles. It automatically groups consecutive segments by role (User/Agent) and resets pacing based on natural conversational pauses.
 - **Seamless PCM Audio:** Leveraging Web Audio API's `AudioContext`, the engine schedules raw 24kHz PCM chunks back-to-back for a perfect, gapless voice experience.
 
 ### 3. Visual Metrics Hub & Behavioral Analysis

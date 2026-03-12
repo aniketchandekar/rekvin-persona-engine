@@ -14,6 +14,7 @@ export function usePlaywrightAgent() {
     const [isMicActive, setIsMicActive] = useState<boolean>(false);
     const [userTranscript, setUserTranscript] = useState<string>('');
     const [agentTranscript, setAgentTranscript] = useState<string>('');
+    const [transcripts, setTranscripts] = useState<{ role: 'user' | 'agent', text: string, timestamp: number }[]>([]);
 
     const sessionIdRef = useRef<string | null>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
@@ -29,6 +30,7 @@ export function usePlaywrightAgent() {
     const ttsSpeakingRef = useRef<boolean>(false);
     const ttsQueueRef = useRef<{ text: string; onStart?: () => void }[]>([]);
     const ttsUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+    const isLiveApiRef = useRef<boolean>(false);
 
     // Schedules a raw PCM base64 chunk (24kHz, 16-bit, mono) into a gapless audio stream
     const schedulePcmChunk = useCallback((base64: string) => {
@@ -61,14 +63,22 @@ export function usePlaywrightAgent() {
             source.connect(ctx.destination);
 
             // Schedule precisely after the previous chunk
-            const startTime = Math.max(ctx.currentTime, nextPlayTimeRef.current);
+            const now = ctx.currentTime;
+            
+            // Robust check: if we've fallen too far behind, catch up to 'now'
+            if (nextPlayTimeRef.current < now) {
+                nextPlayTimeRef.current = now + 0.05; // 50ms safety buffer
+            }
+            
+            const startTime = nextPlayTimeRef.current;
             source.start(startTime);
             nextPlayTimeRef.current = startTime + audioBuffer.duration;
 
             setIsSpeaking(true);
             source.onended = () => {
-                // Only clear speaking indicator when no more chunks are queued soon
-                if (nextPlayTimeRef.current <= (outputAudioCtxRef.current?.currentTime ?? 0) + 0.1) {
+                // Check if we are still effectively speaking by checking the schedule
+                const currentCtxTime = outputAudioCtxRef.current?.currentTime ?? 0;
+                if (nextPlayTimeRef.current <= currentCtxTime + 0.1) {
                     setIsSpeaking(false);
                 }
             };
@@ -220,15 +230,32 @@ export function usePlaywrightAgent() {
     }, []);
 
     const toggleMic = useCallback(async () => {
-        if (isMicActive) {
-            stopMic();
-        } else {
+        const newState = !isMicActive;
+        setIsMicActive(newState);
+        
+        if (newState) {
             await startMic();
+        } else {
+            stopMic();
+        }
+        
+        // Notify backend of mic state change to switch between testing/conversation modes
+        if (sessionIdRef.current) {
+            try {
+                await fetch('/api/test/mic-state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: sessionIdRef.current, active: newState })
+                });
+            } catch (err) {
+                console.error('Failed to update mic state on backend:', err);
+            }
         }
     }, [isMicActive, startMic, stopMic]);
 
     const startTest = useCallback(async (targetUrl: string, persona: any, goal?: string) => {
         // Reset
+        isLiveApiRef.current = true; // For now assuming playwright mode uses Live API
         setStatus('running');
         setThoughts([]);
         setScreenshots([]);
@@ -249,9 +276,14 @@ export function usePlaywrightAgent() {
                 const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
                 outputAudioCtxRef.current = new AudioContextClass({ sampleRate: 24000 });
             }
+            
+            // Always ensure it is resumed
             if (outputAudioCtxRef.current.state === 'suspended') {
-                outputAudioCtxRef.current.resume();
+                await outputAudioCtxRef.current.resume();
             }
+            // Reset timing and PCM flag for new session
+            nextPlayTimeRef.current = outputAudioCtxRef.current.currentTime + 0.1;
+            hasPcmAudioRef.current = false;
         } catch (err) {
             console.warn('Could not initialize AudioContext eagerly:', err);
         }
@@ -316,18 +348,50 @@ export function usePlaywrightAgent() {
         // ── LIVE TRANSCRIPTIONS ──
         evtSource.addEventListener('user_transcript', (e) => {
             const data = JSON.parse((e as MessageEvent).data);
-            setUserTranscript(data.text || '');
+            const text = data.text || '';
+            setUserTranscript(text);
+            if (text.trim()) {
+                setTranscripts(prev => {
+                    const now = Date.now();
+                    if (prev.length > 0 && prev[prev.length - 1].role === 'user') {
+                        const last = prev[prev.length - 1];
+                        if (now - last.timestamp < 10000) {
+                            const updatedText = last.text.endsWith(' ') || text.startsWith(' ') ? last.text + text : last.text + ' ' + text;
+                            return [...prev.slice(0, -1), { ...last, text: updatedText, timestamp: now }];
+                        }
+                    }
+                    return [...prev, { role: 'user', text, timestamp: now }];
+                });
+            }
         });
 
         evtSource.addEventListener('agent_transcript', (e) => {
             const data = JSON.parse((e as MessageEvent).data);
             const text = data.text || '';
-            if (text && !hasPcmAudioRef.current) {
-                // Defer showing transcript until TTS actually starts speaking
-                speakText(text, () => setAgentTranscript(text));
+            
+            const handleAgentTranscript = (t: string) => {
+                setAgentTranscript(t);
+                if (t.trim()) {
+                    setTranscripts(prev => {
+                        const now = Date.now();
+                        if (prev.length > 0 && prev[prev.length - 1].role === 'agent') {
+                            const last = prev[prev.length - 1];
+                            if (now - last.timestamp < 10000) {
+                                const updatedText = last.text.endsWith(' ') || t.startsWith(' ') ? last.text + t : last.text + ' ' + t;
+                                return [...prev.slice(0, -1), { ...last, text: updatedText, timestamp: now }];
+                            }
+                        }
+                        return [...prev, { role: 'agent', text: t, timestamp: now }];
+                    });
+                }
+            };
+
+            if (text && !hasPcmAudioRef.current && !isLiveApiRef.current) {
+                // Defer showing transcript until TTS actually starts speaking (Fallback only)
+                speakText(text, () => handleAgentTranscript(text));
             } else {
-                // If PCM audio is active, show transcript immediately (audio is already playing)
-                setAgentTranscript(text);
+                // If PCM audio is active OR we are in Live API mode, show transcript immediately 
+                handleAgentTranscript(text);
             }
         });
 
@@ -433,6 +497,7 @@ export function usePlaywrightAgent() {
         isMicActive,
         userTranscript,
         agentTranscript,
+        transcripts,
         startTest,
         stopTest,
         reset,

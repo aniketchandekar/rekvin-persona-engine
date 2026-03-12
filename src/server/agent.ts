@@ -106,8 +106,12 @@ interface AgentSession {
     browser: Browser;
     page: Page;
     running: boolean;
-    geminiWs: WebSocket | null;
-    screenshotInterval: ReturnType<typeof setInterval> | null;
+    micActive?: boolean;
+    geminiWs?: WebSocket;
+    sessionLog: string[];
+    playwright?: {
+        screenshotInterval: ReturnType<typeof setInterval> | null;
+    };
 }
 const activeSessions = new Map<string, AgentSession>();
 
@@ -280,7 +284,49 @@ app.post('/api/test/audio', (req, res) => {
     res.json({ ok: true });
 });
 
-// 5. Text-to-Speech endpoint (used by PersonaChatModal)
+// 5. Toggle microphone state (conversation mode vs. testing mode)
+app.post('/api/test/mic-state', (req, res) => {
+    const { sessionId, active } = req.body;
+    const session = activeSessions.get(sessionId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    session.micActive = active;
+    console.log(`[${sessionId}] Mic state changed to: ${active ? 'ACTIVE (Conversation Mode)' : 'INACTIVE (Testing Mode)'}`);
+
+    if (session.geminiWs && session.geminiWs.readyState === WebSocket.OPEN) {
+        let msg = "";
+        if (active) {
+            const history = session.sessionLog.length > 0 
+                ? session.sessionLog.join('\n')
+                : "No actions taken yet.";
+                
+            msg = `[SYSTEM] User has turned on their microphone. Suspend all autonomous testing actions and tools.
+Switch to CONVERSATION MODE: listen to the user, respond to their questions in character, and wait for their input. 
+Do not click or type anything until the mic is turned off.
+
+SESSION LOG SO FAR:
+${history}
+
+Use this log to answer questions about what you have done, what failed, or what you observe.`;
+        } else {
+            msg = "[SYSTEM] User has turned off their microphone. Switch back to TESTING MODE: resume autonomous testing and navigation of the application using your tools. Follow the previous goal if provided.";
+        }
+            
+        session.geminiWs.send(JSON.stringify({
+            clientContent: {
+                turns: [{
+                    role: 'user',
+                    parts: [{ text: msg }]
+                }],
+                turnComplete: true
+            }
+        }));
+    }
+
+    res.json({ success: true });
+});
+
+// 6. Text-to-Speech endpoint (used by PersonaChatModal)
 app.post('/api/tts', async (req, res) => {
     const { text, voiceName } = req.body;
     if (!text) return res.status(400).json({ error: 'Text is required' });
@@ -371,7 +417,15 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
         if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
 
-    const session: AgentSession = { browser, page, running: true, geminiWs: null, screenshotInterval: null };
+    const session: AgentSession = { 
+        browser, 
+        page, 
+        running: true, 
+        micActive: false, 
+        geminiWs: undefined, 
+        sessionLog: [],
+        playwright: { screenshotInterval: null } 
+    };
     activeSessions.set(sessionId, session);
 
     const personaPrompt = buildPersonaPrompt(persona);
@@ -445,6 +499,7 @@ RULES:
 - DO NOT use jQuery pseudo-classes like :contains(). Use :has-text("...") instead.
 - When the user speaks to you during the session, they are the UX researcher observing you. Respond in character and adjust your behavior based on their instructions.
 - After approximately ${MAX_STEPS} actions, wrap up and call finish_session.
+- You have access to a [SESSION LOG] which records your actions. Refer to it if the user asks "What did you just do?" or similar questions.
 - Begin by observing the page and narrating your first impressions, then take your first action.`
                             }]
                         },
@@ -502,7 +557,7 @@ RULES:
                     session.geminiWs?.send(JSON.stringify(initialMessage));
 
                     // Start periodic screenshot streaming
-                    session.screenshotInterval = setInterval(async () => {
+                    session.playwright!.screenshotInterval = setInterval(async () => {
                         if (session.running) {
                             await sendScreenshotToGemini(session, sessionId);
                         }
@@ -511,47 +566,42 @@ RULES:
                 }
 
                 // ── Server content (audio, text, transcriptions) ──
-                if (response.serverContent) {
-                    const sc = response.serverContent;
+                if (response.serverContent || response.server_content) {
+                    const sc = response.serverContent || response.server_content;
 
                     // Audio output from Gemini
-                    if (sc.modelTurn?.parts) {
-                        for (const part of sc.modelTurn.parts) {
-                            if (part.inlineData) {
+                    const modelTurn = sc.modelTurn || sc.model_turn;
+                    if (modelTurn?.parts) {
+                        for (const part of modelTurn.parts) {
+                            const inlineData = part.inlineData || part.inline_data;
+                            if (inlineData) {
                                 // Raw PCM audio from Gemini — send raw base64 to client for seamless AudioContext playback
                                 sendEvent(sessionId, 'audio', {
                                     step: stepCount,
-                                    audioBase64: part.inlineData.data,
+                                    audioBase64: inlineData.data,
                                     sampleRate: 24000  // Gemini outputs 24kHz PCM 16-bit mono
                                 });
                             }
-                            if (part.text) {
-                                // Text response — emit as thought
-                                sendEvent(sessionId, 'thought', {
-                                    step: stepCount,
-                                    thought: part.text,
-                                    action: 'narrate',
-                                    selector: null,
-                                    value: null,
-                                    reason: null,
-                                    timestamp: Date.now()
-                                });
-                            }
+                            // NOTE: part.text is NOT emitted as a thought here.
+                            // In AUDIO mode, the spoken content arrives via outputTranscription,
+                            // so emitting part.text would create duplicate/redundant transcript entries.
                         }
                     }
 
                     // Input transcription (user's voice)
-                    if (sc.inputTranscription?.text) {
+                    const inputTranscription = sc.inputTranscription || sc.input_transcription;
+                    if (inputTranscription?.text) {
                         sendEvent(sessionId, 'user_transcript', {
-                            text: sc.inputTranscription.text,
+                            text: inputTranscription.text,
                             timestamp: Date.now()
                         });
                     }
 
                     // Output transcription (agent's voice)
-                    if (sc.outputTranscription?.text) {
+                    const outputTranscription = sc.outputTranscription || sc.output_transcription;
+                    if (outputTranscription?.text) {
                         sendEvent(sessionId, 'agent_transcript', {
-                            text: sc.outputTranscription.text,
+                            text: outputTranscription.text,
                             timestamp: Date.now()
                         });
                     }
@@ -559,17 +609,23 @@ RULES:
 
                 // ── Tool calls from Gemini ──
                 if (response.toolCall) {
+                    if (session.micActive) {
+                        console.log(`[${sessionId}] Tool call received but suppressed due to active microphone (Conversation Mode)`);
+                        return;
+                    }
+
                     const functionCalls = response.toolCall.functionCalls || [];
                     const functionResponses: any[] = [];
 
                     for (const fc of functionCalls) {
                         stepCount++;
 
-                        // Emit the thought for this action
+                        // Emit a clean thought for this action (persona narration only)
+                        const actionName = fc.name.replace('_element', '').replace('_text', '').replace('_page', '').replace('_session', '');
                         sendEvent(sessionId, 'thought', {
                             step: stepCount - 1,
                             thought: fc.args?.thought || 'Taking action...',
-                            action: fc.name.replace('_element', '').replace('_text', '').replace('_page', '').replace('_session', ''),
+                            action: actionName,
                             selector: fc.args?.selector || null,
                             value: fc.args?.value || null,
                             reason: fc.args?.reason || null,
@@ -591,6 +647,12 @@ RULES:
                             response: { result: result }
                         });
 
+                        // Update session log
+                        session.sessionLog.push(`[Action] ${actionName}: ${result.success ? 'Success' : 'Failed'} - ${result.detail}`);
+                        if (fc.args?.thought) {
+                            session.sessionLog.push(`[Thought] ${fc.args.thought}`);
+                        }
+
                         // Check if session should end
                         if (fc.name === 'finish_session' || stepCount >= MAX_STEPS) {
                             session.running = false;
@@ -605,17 +667,9 @@ RULES:
                             // Generate analysis
                             await generateAnalysis(sessionId, persona, stepCount);
                         }
-
-                        // Wait a moment for UI transitions
-                        if (session.running) {
-                            await page.waitForTimeout(1200);
-
-                            // Send a fresh screenshot after the action
-                            await sendScreenshotToGemini(session, sessionId);
-                        }
                     }
 
-                    // Send tool responses back to Gemini
+                    // Send tool responses back to Gemini IMMEDIATELY to unblock the model
                     if (session.geminiWs && session.geminiWs.readyState === WebSocket.OPEN) {
                         const toolResponseMessage = {
                             toolResponse: {
@@ -623,6 +677,12 @@ RULES:
                             }
                         };
                         session.geminiWs.send(JSON.stringify(toolResponseMessage));
+                    }
+
+                    // THEN wait briefly and send a follow-up screenshot (non-blocking for the model)
+                    if (session.running) {
+                        await page.waitForTimeout(500);
+                        await sendScreenshotToGemini(session, sessionId);
                     }
                 }
 
@@ -658,7 +718,7 @@ RULES:
         sendEvent(sessionId, 'error', { message: err?.message || 'Agent encountered an unknown error.' });
     } finally {
         // Cleanup
-        if (session.screenshotInterval) clearInterval(session.screenshotInterval);
+        if (session.playwright?.screenshotInterval) clearInterval(session.playwright.screenshotInterval);
         if (session.geminiWs && session.geminiWs.readyState === WebSocket.OPEN) {
             session.geminiWs.close();
         }

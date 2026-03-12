@@ -40,6 +40,8 @@ graph TD
     %% Live API Connection
     AgentEngine -- "Secure WebSocket (WSS) <br> Raw PCM Audio + Base64 Video Frames" --> GeminiLive
     GeminiLive -- "WSS stream <br> AI Voice Audio + Text Transcript" --> AgentEngine
+    AgentEngine -- "Smart Grouping <br> Turns transcription stream into sentences" --> UI
+    AgentEngine -- "Session Log Context <br> Injects action history into conversation" --> GeminiLive
 
     %% Proxy Connections (REST)
     UI -- "REST (JSON) <br> <i>Requests Chat, Analytics, Generators</i>" --> BackendProxy
