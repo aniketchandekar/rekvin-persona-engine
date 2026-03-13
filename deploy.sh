@@ -29,6 +29,7 @@ $GCLOUD_PATH run deploy $SERVICE_NAME \
   --allow-unauthenticated \
   --session-affinity \
   --project $PROJECT_ID \
+  --memory 1Gi \
   --set-env-vars="GEMINI_API_KEY=$GEMINI_API_KEY,GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=$REGION"
 
 echo "✅ Deployment complete!"
