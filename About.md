@@ -2,6 +2,8 @@
 
 Rekvin is an AI-powered UX research and autonomous testing platform. It allows product teams to build user archetypes (personas) through a visual node-based workflow and then deploy those personas as autonomous agents to test real-world web applications.
 
+![Architecture Diagram](Architecture%20Diagram.png)
+
 ## 🚀 How it Uses Gen AI (Gemini SDK)
 
 This project is built from the ground up to showcase the multimodal, reasoning, and synthesis capabilities of the Google Gemini models (`gemini-2.5-flash`, `gemini-2.5-pro`, and the `gemini-2.5-flash-native-audio-preview` Live API).

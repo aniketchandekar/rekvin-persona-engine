@@ -1,10 +1,10 @@
-
-
 # Rekvin
 
 Rekvin is an AI-powered UX research platform that transforms static personas into autonomous, multimodal agents. Build personas through Socratic interviews, chat with them using native TTS, and deploy them to test your web applications autonomously.
-
-## ✨ Key Features
+ 
+ ![Architecture Diagram](Architecture%20Diagram.png)
+ 
+ ## ✨ Key Features
 
 - **Visual Persona Builder:** Create deep user archetypes using a node-based canvas and AI-guided Socratic interviews.
 - **Multimodal Live Agent:** Watch AI agents navigate your site in real-time using the **Vertex AI Gemini Multimodal Live API**. The agent "sees" the UI at 1fps and immediately begins testing autonomously.
