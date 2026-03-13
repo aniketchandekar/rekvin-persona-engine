@@ -4,6 +4,8 @@ Rekvin is an AI-powered UX research platform that transforms static personas int
  
  ![Architecture Diagram](Architecture%20Diagram.png)
  
+ **[🚀 Try the Live Demo](https://rekvin-engine-149602919559.us-central1.run.app/)**
+ 
  ## ✨ Key Features
 
 - **Visual Persona Builder:** Create deep user archetypes using a node-based canvas and AI-guided Socratic interviews.

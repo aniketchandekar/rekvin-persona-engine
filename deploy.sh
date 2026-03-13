@@ -3,7 +3,7 @@
 # Configuration
 PROJECT_ID="rekvin-v0"
 IMAGE_NAME="rekvin-engine"
-SERVICE_NAME="rekvin-persona-engine"
+SERVICE_NAME="rekvin-engine"
 REGION="us-central1"
 GCLOUD_PATH="/Users/aniket/google-cloud-sdk/bin/gcloud"
 

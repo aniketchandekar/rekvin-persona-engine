@@ -18,6 +18,7 @@ The core of the testing engine is a Playwright-driven agent loop powered by the 
 ### 2. User Voice Intervention & Chat UI
 Rekvin enables a uniquely collaborative research flow via the Multimodal Live API.
 - **Real-Time Guidance:** Users can activate their microphone at any time to speak to the autonomous agent. 
+ 
 - **Barge-in Support:** You can interrupt the agent's narration or redirect its testing strategy mid-session. The agent listens to your voice stream while simultaneously processing its vision and audio output.
 - **Smart Transcript Grouping:** A dedicated **Transcription Hub** uses a grouping heuristic to combine streaming, word-by-word transcripts into clean, readable chat bubbles. It automatically groups consecutive segments by role (User/Agent) and resets pacing based on natural conversational pauses.
 - **Seamless PCM Audio:** Leveraging Web Audio API's `AudioContext`, the engine schedules raw 24kHz PCM chunks back-to-back for a perfect, gapless voice experience.
@@ -55,6 +56,13 @@ After testing, the Metrics Hub is used to validate the persona model itself.
 - **Cloud-Native ADC Auth:** Uses `google-auth-library` to authenticate with Vertex AI via Service Account keys or local ADC, eliminating the need to expose API keys for Live connections.
 - **Hybrid Speech Engine:** Custom Web Audio logic that blends raw 24kHz PCM chunks from Vertex AI (live) with a robust **Gemini TTS queueing system** for thoughts, fallbacks, and post-session chat.
 - **AI SDK:** Vertex AI GA models for real-time interaction, reasoning, and high-fidelity speech synthesis.
+ 
+ 
+## 🌍 Cloud Deployment
+Rekvin is deployed on **Google Cloud Run** for high scalability and low latency.
+- **Official Link:** [https://rekvin-engine-149602919559.us-central1.run.app/](https://rekvin-engine-149602919559.us-central1.run.app/)
+- **Optimization:** Configured with 1GiB RAM and `session-affinity` to support stable multimodal agent sessions and real-time audio streaming.
+
 
 ## 🧠 The "Persona" Node Structure
 A Persona in Rekvin is more than just a description. It's a structured entity including:
