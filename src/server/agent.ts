@@ -522,8 +522,25 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
 
     try {
         // ── 2. NAVIGATE TO TARGET ────────────────────────────────────────
+        let finalUrl = targetUrl;
+        if ((targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1')) && process.env.LOCAL_TUNNEL_URL) {
+            console.log(`[${sessionId}] Detected localhost URL. Substituting with tunnel: ${process.env.LOCAL_TUNNEL_URL}`);
+            try {
+                const urlObj = new URL(targetUrl);
+                const tunnelObj = new URL(process.env.LOCAL_TUNNEL_URL);
+                urlObj.protocol = tunnelObj.protocol;
+                urlObj.hostname = tunnelObj.hostname;
+                urlObj.port = tunnelObj.port; // This will strip the original port if the tunnel doesn't have one
+                finalUrl = urlObj.toString();
+                console.log(`[${sessionId}] Rewritten URL: ${finalUrl}`);
+                session.sessionLog.push(`[System] Detected localhost. Rewrote URL to tunnel: ${finalUrl}`);
+            } catch (err) {
+                console.error(`[${sessionId}] Error rewriting localhost URL:`, err);
+            }
+        }
+
         // Use networkidle for modern SPAs to ensure all initial requests complete
-        await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30_000 });
+        await page.goto(finalUrl, { waitUntil: 'networkidle', timeout: 30_000 });
         await page.waitForTimeout(2000);
 
         sendEvent(sessionId, 'status', {

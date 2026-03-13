@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Brain, Monitor, Play, Square, Sparkles, Link as LinkIcon, Trash2, AlertCircle, Download, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Save, Video, Bot, Eye, ExternalLink, MessageSquare, Target, Mic, MicOff, ChevronDown, ChevronUp, X, Activity } from 'lucide-react';
+import { Brain, Monitor, Play, Square, Sparkles, Link as LinkIcon, Trash2, AlertCircle, Download, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Save, Video, Bot, Eye, ExternalLink, MessageSquare, Target, Mic, MicOff, ChevronDown, ChevronUp, X, Activity, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Type } from '@google/genai';
 import { SavedSession, Narration } from '../types';
@@ -32,6 +32,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   const [testMode, setTestMode] = useState<'vision' | 'playwright'>('playwright');
   const [sidebarTab, setSidebarTab] = useState<'actions' | 'transcription'>('actions');
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
+  const [showLocalAppInfo, setShowLocalAppInfo] = useState(false);
 
   // ── Vision mode state ─────────────────────────────────────────────
   const [visionStatus, setVisionStatus] = useState<'idle' | 'running' | 'completed'>('idle');
@@ -815,12 +816,37 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
 
               {/* URL Input */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-mono uppercase tracking-widest text-cream-dim ml-1">Target Application</label>
+                <div className="flex items-center justify-between ml-1">
+                  <label className="text-[10px] font-mono uppercase tracking-widest text-cream-dim">Target Application</label>
+                  <button 
+                    onClick={() => setShowLocalAppInfo(!showLocalAppInfo)}
+                    className="text-node-idea hover:text-white transition-colors flex items-center gap-1 text-[9px] font-mono uppercase tracking-tighter"
+                  >
+                    <Info size={10} /> Local App?
+                  </button>
+                </div>
+                
+                <AnimatePresence>
+                  {showLocalAppInfo && (
+                    <motion.div 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="bg-node-idea/10 border border-node-idea/20 rounded-xl p-3 text-[11px] text-cream/70 leading-relaxed mb-2">
+                        <p className="mb-2 uppercase tracking-widest text-[9px] font-mono text-node-idea">Testing Local Apps</p>
+                        To test apps running on your laptop (e.g., localhost:3000), use <span className="text-node-idea font-mono">ngrok</span> to create a public tunnel. Use the ngrok URL here, or configure <span className="text-node-idea font-mono">LOCAL_TUNNEL_URL</span> in your backend to automatically swap localhost URLs.
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div className="relative">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-cream-dim pointer-events-none"><LinkIcon size={14} /></div>
                   <input
                     type="text" value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)}
-                    placeholder="e.g., http://localhost:3000"
+                    placeholder="e.g., https://your-site.com"
                     className="w-full bg-ink-3 border border-rule-2 rounded-xl py-3 pl-11 pr-4 text-sm text-cream focus:outline-none focus:border-node-idea/50 transition-colors"
                   />
                 </div>
