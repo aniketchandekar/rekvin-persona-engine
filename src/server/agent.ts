@@ -195,6 +195,66 @@ const BROWSER_TOOLS = [
                 }
             },
             {
+                name: 'press_key',
+                description: 'Press a single key (Enter, Escape, Tab, ArrowDown) or a combination (Control+S, Shift+Tab).',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        key: {
+                            type: 'STRING',
+                            description: 'The key name or combination string.'
+                        },
+                        thought: {
+                            type: 'STRING',
+                            description: 'Brief narration explaining why you are pressing this key.'
+                        }
+                    },
+                    required: ['key', 'thought']
+                }
+            },
+            {
+                name: 'navigate_back',
+                description: 'Go back to the previous page in history.',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        thought: {
+                            type: 'STRING',
+                            description: 'Brief narration explaining why you are going back.'
+                        }
+                    },
+                    required: ['thought']
+                }
+            },
+            {
+                name: 'navigate_forward',
+                description: 'Go forward to the next page in history.',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        thought: {
+                            type: 'STRING',
+                            description: 'Brief narration explaining why you are going forward.'
+                        }
+                    },
+                    required: ['thought']
+                }
+            },
+            {
+                name: 'reload_page',
+                description: 'Reload the current page.',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        thought: {
+                            type: 'STRING',
+                            description: 'Brief narration explaining why you are reloading.'
+                        }
+                    },
+                    required: ['thought']
+                }
+            },
+            {
                 name: 'finish_session',
                 description: 'Call this when you believe you have completed the task OR when you want to abandon the session due to frustration.',
                 parameters: {
@@ -846,6 +906,27 @@ async function executeTool(page: Page, toolName: string, args: any): Promise<{ s
                 if (!locator) return { success: false, detail: 'No selector for hover' };
                 await locator.hover({ timeout });
                 return { success: true, detail: `Hovered over "${selector}"` };
+            }
+
+            case 'press_key': {
+                if (!args.key) return { success: false, detail: 'No key provided' };
+                await page.keyboard.press(args.key);
+                return { success: true, detail: `Pressed key: "${args.key}"` };
+            }
+
+            case 'navigate_back': {
+                await page.goBack({ waitUntil: 'networkidle', timeout });
+                return { success: true, detail: 'Navigated back' };
+            }
+
+            case 'navigate_forward': {
+                await page.goForward({ waitUntil: 'networkidle', timeout });
+                return { success: true, detail: 'Navigated forward' };
+            }
+
+            case 'reload_page': {
+                await page.reload({ waitUntil: 'networkidle', timeout });
+                return { success: true, detail: 'Page reloaded' };
             }
 
             default:
