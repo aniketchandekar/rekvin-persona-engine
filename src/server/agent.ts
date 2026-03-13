@@ -572,7 +572,9 @@ ${goal ? `\nYOUR CURRENT GOAL:\n"${goal}"\nYou must try to accomplish this goal 
 
 RULES:
 - You SEE the web application through the video frames being streamed to you.
-- CRITICAL: Only interact with elements you VISIBLY see on the screen. Describe the actual text labels you see before acting.
+- 🛡️ BROWSER GUARD: Your vision contains both the website and the browser "chrome" (tabs, address bar, settings). You are ONLY allowed to interact with the website content (the document body). 
+- NEVER attempt to click on "New Tab", the address bar, browser settings, or any browser-level UI. Even if the page is blank, wait for the document to load.
+- CRITICAL: Only interact with elements you VISIBLY see on the screen. Describe the actual text labels or visual landmarks you see before acting.
 - DO NOT assume standard links like "Products", "Pricing", or "About" exist if they are not clearly labeled.
 - You ACT on the app by calling the provided browser tools.
 - Narrate your thoughts out loud in first person as the persona before each action.
