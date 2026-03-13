@@ -19,6 +19,9 @@ Rekvin enables a uniquely collaborative research flow via the Multimodal Live AP
 - **Barge-in Support:** You can interrupt the agent's narration or redirect its testing strategy mid-session. The agent listens to your voice stream while simultaneously processing its vision and audio output.
 - **Smart Transcript Grouping:** A dedicated **Transcription Hub** uses a grouping heuristic to combine streaming, word-by-word transcripts into clean, readable chat bubbles. It automatically groups consecutive segments by role (User/Agent) and resets pacing based on natural conversational pauses.
 - **Seamless PCM Audio:** Leveraging Web Audio API's `AudioContext`, the engine schedules raw 24kHz PCM chunks back-to-back for a perfect, gapless voice experience.
+- **Premium Gemini TTS Integration:** Migrated from browser-native speech to the **Gemini TTS** API (`/api/tts`). All synthetic speech uses premium Gemini voices, with the persona's description passed as a **Style Prompt** to ensure the voice matches the character's personality and tone.
+- **Gender-Aware Voice Mapping:** The system automatically categorizes personas based on their name and description using an AI classifier. It then assigns a corresponding male (`Charon`), female (`Aoede`), or neutral (`Puck`) premium voice during the initial creation phase or workflow execution.
+- **Post-Session Debriefing Flow:** After a test concludes, the "Talk to Agent" mode initializes the chat by injecting the internal **Session Log** (including the agent's hidden thoughts, manual narrations, and metric results). This grounds the agent's responses, allowing it to explain its reasoning post-hoc with perfect recall of the session.
 
 ### 3. Visual Metrics Hub & Behavioral Analysis
 The Metrics Hub transforms raw session recordings into actionable, quantitative data.
@@ -48,8 +51,8 @@ After testing, the Metrics Hub is used to validate the persona model itself.
 - **Visual Engine:** `@xyflow/react` (React Flow) v12 for the interactive canvases.
 - **Backend:** Node.js (Express) server running a Playwright-powered browser automation loop and acting as a secure Vertex AI proxy for frontend clients.
 - **Cloud-Native ADC Auth:** Uses `google-auth-library` to authenticate with Vertex AI via Service Account keys or local ADC, eliminating the need to expose API keys for Live connections.
-- **Hybrid Speech Engine:** Custom Web Audio logic that seamlessly blends raw 24kHz PCM chunks with Web Speech API (TTS) fallbacks for maximum resilience against network jitter or API latency.
-- **AI SDK:** Vertex AI GA models for real-time interaction and reasoning.
+- **Hybrid Speech Engine:** Custom Web Audio logic that blends raw 24kHz PCM chunks from Vertex AI (live) with a robust **Gemini TTS queueing system** for thoughts, fallbacks, and post-session chat.
+- **AI SDK:** Vertex AI GA models for real-time interaction, reasoning, and high-fidelity speech synthesis.
 
 ## 🧠 The "Persona" Node Structure
 A Persona in Rekvin is more than just a description. It's a structured entity including:

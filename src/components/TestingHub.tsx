@@ -44,6 +44,8 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
 
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [playingThoughtId, setPlayingThoughtId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -152,10 +154,19 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
           setNarrations(prev => [...prev, { id: Date.now().toString(), text: 'Connected. Observing screen...' }]);
           intervalRef.current = window.setInterval(captureAndAnalyze, 1000); // 1 frame per second as per limits
         } else if (data.type === 'transcript' && data.text.trim()) {
-          setNarrations(prev => [...prev, { id: Date.now().toString(), text: data.text }]);
+          const id = Date.now().toString();
+          setNarrations(prev => [...prev, { id, text: data.text }]);
+          // Auto-read via Gemini TTS for consistent quality
+          playThoughtAudio(
+            data.text, 
+            activePersona?.data?.voiceName || 'Puck', 
+            id, 
+            activePersona?.data?.content || activePersona?.content || ''
+          );
         } else if (data.type === 'audio') {
-          audioQueueRef.current.push(data.data);
-          playNextAudio();
+          // Live API audio is disabled in favor of stable Gemini TTS synthesis for transcripts
+          // audioQueueRef.current.push(data.data);
+          // playNextAudio();
         }
       };
 
@@ -277,9 +288,12 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
       let videoUrl = null;
       if (currentVideoBlob) videoUrl = URL.createObjectURL(currentVideoBlob);
       const newSession: SavedSession = {
-        id: Date.now().toString(), date: Date.now(), personaLabel: activePersona.data.label,
+        id: Date.now().toString(), date: Date.now(), 
+        personaLabel: activePersona.data.label,
+        personaContent: activePersona.data.content || activePersona.content || '',
         targetUrl, videoUrl, narrations: [...narrations], analysis: analysisResult || undefined,
         mode: 'vision',
+        voiceName: activePersona.data.voiceName || 'Puck',
       };
       setSavedSessions(prev => [newSession, ...prev]);
     } else {
@@ -300,6 +314,7 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
           metrics: pwAnalysis.metrics,
         } : undefined,
         mode: 'playwright',
+        voiceName: activePersona?.data.voiceName || 'Puck',
         agentThoughts: [...playwright.thoughts],
         agentScreenshots: playwright.screenshots.map(s => ({ ...s, image: '' })), // Don't store base64 in memory
       };
@@ -338,8 +353,47 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   };
 
   useEffect(() => {
-    return () => stopVisionTest(false);
+    return () => {
+        stopVisionTest(false);
+        if (audioRef.current) audioRef.current.pause();
+    };
   }, []);
+
+  const playThoughtAudio = async (text: string, voiceName: string, id: string, prompt?: string) => {
+    if (playingThoughtId === id) {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            setPlayingThoughtId(null);
+        }
+        return;
+    }
+
+    setPlayingThoughtId(id);
+    try {
+        const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                text, 
+                voiceName,
+                prompt: prompt || (activePersona?.data.content || activePersona?.content || '')
+            })
+        });
+        if (!res.ok) throw new Error('TTS failed');
+        const data = await res.json();
+        if (data.audioBase64) {
+            if (audioRef.current) audioRef.current.pause();
+            const audio = new Audio(`data:audio/mp3;base64,${data.audioBase64}`);
+            audioRef.current = audio;
+            audio.onended = () => setPlayingThoughtId(null);
+            audio.onerror = () => setPlayingThoughtId(null);
+            audio.play();
+        }
+    } catch (err) {
+        console.error("Play thought audio error:", err);
+        setPlayingThoughtId(null);
+    }
+  };
 
   // ═══════════════════════════════════════════════════════════════════
   //  RENDER
@@ -651,6 +705,15 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                                     <span className="text-[9px] font-mono text-cream-dim/60">
                                       {t.timestamp ? new Date(t.timestamp).toLocaleTimeString() : `Step ${t.step + 1}`}
                                     </span>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        playThoughtAudio(t.thought, session.voiceName || 'Puck', `${session.id}-${idx}`, session.personaContent);
+                                      }}
+                                      className={`p-1 rounded-full transition-colors ${playingThoughtId === `${session.id}-${idx}` ? 'text-node-idea bg-node-idea/10' : 'text-cream-dim hover:text-cream hover:bg-white/10'}`}
+                                    >
+                                      {playingThoughtId === `${session.id}-${idx}` ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+                                    </button>
                                   </div>
                                   <p className="text-[11px] text-cream/90 italic leading-snug my-1">"{t.thought}"</p>
                                   {t.selector && (
@@ -663,9 +726,20 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                             ) : (
                               session.narrations.map(n => (
                                 <div key={n.id} className="text-[11px] text-cream/80 leading-relaxed border-l-2 border-rule-2 pl-3 pb-2 flex flex-col gap-1">
-                                  <span className="text-[9px] font-mono text-cream-dim/60">
-                                    {new Date(parseInt(n.id) || Date.now()).toLocaleTimeString()}
-                                  </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[9px] font-mono text-cream-dim/60">
+                                      {new Date(parseInt(n.id) || Date.now()).toLocaleTimeString()}
+                                    </span>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        playThoughtAudio(n.text, session.voiceName || 'Puck', `${session.id}-${n.id}`, session.personaContent);
+                                      }}
+                                      className={`p-1 rounded-full transition-colors ${playingThoughtId === `${session.id}-${n.id}` ? 'text-node-idea bg-node-idea/10' : 'text-cream-dim hover:text-cream hover:bg-white/10'}`}
+                                    >
+                                      {playingThoughtId === `${session.id}-${n.id}` ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+                                    </button>
+                                  </div>
                                   <span>{n.text}</span>
                                 </div>
                               ))
@@ -846,6 +920,21 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                           </div>
                         ) : (
                           <>
+                            <button 
+                              onClick={() => {
+                                const sessionData = {
+                                  mode: testMode,
+                                  agentThoughts: testMode === 'playwright' ? [...playwright.thoughts] : undefined,
+                                  narrations: testMode === 'vision' ? [...narrations] : undefined,
+                                  analysis: testMode === 'playwright' ? playwright.analysis : analysisResult,
+                                };
+                                onOpenChat(activePersona, sessionData);
+                              }}
+                              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-node-idea/20 text-node-idea hover:bg-node-idea/30 transition-colors text-xs font-medium"
+                              title="Ask the agent questions about this session"
+                            >
+                              <MessageSquare size={12} /> Talk to Agent
+                            </button>
                             <button onClick={saveSession} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-node-persona/20 text-node-persona hover:bg-node-persona/30 transition-colors text-xs font-medium">
                               <Save size={12} /> Save Session
                             </button>
@@ -1051,7 +1140,18 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                                       className="bg-ink-3 border border-rule rounded-xl p-3 text-sm text-cream/80 leading-relaxed shadow-sm relative"
                                     >
                                       <div className="absolute -left-1.5 top-4 w-3 h-3 bg-ink-3 border border-rule rotate-45" />
-                                      <div className="relative z-10">{narration.text}</div>
+                                      <div className="relative z-10 flex items-start justify-between gap-2">
+                                        <div className="flex-1">{narration.text}</div>
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            playThoughtAudio(narration.text, activePersona?.data.voiceName || 'Puck', narration.id);
+                                          }}
+                                          className={`p-1 rounded-full shrink-0 transition-colors ${playingThoughtId === narration.id ? 'text-node-idea bg-node-idea/10' : 'text-cream-dim hover:text-cream hover:bg-white/10'}`}
+                                        >
+                                          {playingThoughtId === narration.id ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+                                        </button>
+                                      </div>
                                     </motion.div>
                                   ))
                                 ) : (
@@ -1077,10 +1177,21 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                                         {thought.value && (
                                           <div className="mt-1 text-[10px] text-node-journey font-mono">Typed: "{thought.value}"</div>
                                         )}
-                                        {thought.reason && (
-                                          <div className="mt-1 text-[10px] text-node-tension">Reason: {thought.reason}</div>
-                                        )}
-                                      </div>
+                                          {thought.reason && (
+                                            <div className="mt-1 text-[10px] text-node-tension">Reason: {thought.reason}</div>
+                                          )}
+                                        </div>
+                                        <div className="absolute top-3 right-3">
+                                          <button 
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              playThoughtAudio(thought.thought, activePersona?.data.voiceName || 'Puck', `live-${i}`);
+                                            }}
+                                            className={`p-1 rounded-full transition-colors ${playingThoughtId === `live-${i}` ? 'text-node-idea bg-node-idea/10' : 'text-cream-dim hover:text-cream hover:bg-white/10'}`}
+                                          >
+                                            {playingThoughtId === `live-${i}` ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+                                          </button>
+                                        </div>
                                     </motion.div>
                                   ))
                                 )}

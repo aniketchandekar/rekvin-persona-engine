@@ -1,0 +1,13 @@
+.gcloudignore
+.git
+.gitignore
+node_modules
+dist
+tmp
+*.log
+.env
+.agents
+_agent
+.agent
+brain
+artifacts

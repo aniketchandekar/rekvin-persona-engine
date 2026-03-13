@@ -138,11 +138,15 @@ Rules:
             setMessages(prev => [...prev, { role: 'model', text: responseText }]);
 
             // Fetch TTS
-            const voiceName = getVoiceForPersona(); // simple heuristic
+            const voiceName = persona.data.voiceName || 'Puck';
             const ttsRes = await fetch('/api/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: responseText, voiceName })
+                body: JSON.stringify({ 
+                    text: responseText, 
+                    voiceName,
+                    prompt: persona.data.content || ''
+                })
             });
 
             if (ttsRes.ok) {
@@ -160,7 +164,7 @@ Rules:
     };
 
     const playAudio = (base64Data: string) => {
-        const audioUrl = `data:audio/wav;base64,${base64Data}`;
+        const audioUrl = `data:audio/mpeg;base64,${base64Data}`;
         if (audioRef.current) {
             audioRef.current.pause();
         }
@@ -181,17 +185,6 @@ Rules:
         }
     };
 
-    // Simple heuristic for generic voice matching without hitting API
-    const getVoiceForPersona = () => {
-        const content = (persona.data.content || '').toLowerCase();
-        const isFemale = content.includes(' she ') || content.includes(' her ') || content.includes('woman') || content.includes('girl');
-
-        if (isFemale) {
-            return 'Aoede'; // Female
-        } else {
-            return 'Fenrir'; // Default Male
-        }
-    };
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/80 backdrop-blur-sm p-4 md:p-12">

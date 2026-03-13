@@ -9,13 +9,13 @@ Rekvin is an AI-powered UX research platform that transforms static personas int
 - **Visual Persona Builder:** Create deep user archetypes using a node-based canvas and AI-guided Socratic interviews.
 - **Multimodal Live Agent:** Watch AI agents navigate your site in real-time using the **Vertex AI Gemini Multimodal Live API**. The agent "sees" the UI at 1fps and immediately begins testing autonomously.
 - **Interactive Conversation Mode:** Redirect the agent's behavior or ask for its reasoning mid-session. Using your microphone, you can intervene and have a real-time voice conversation with the synthetic agent.
-- **Chat-Style Transcription:** A modern, scrolling chat UI that transforms streaming transcriptions into readable sentences and turns. It uses **Smart Grouping** to combine word-by-word streams into complete thoughts.
-- **Contextual Reasoning:** The agent maintains a full **Session Log** context. When you ask "What just happened?", it refers back to its previous thoughts and actions for accurate conversational responses.
-- **Improved Feedback Grid:** Saved sessions are now displayed in a responsive 3-column grid of compact cards. Click any card to expand a detailed view with the full story, metrics, and action transcript.
+- **Post-Session Agent Chat:** Debrief with the persona after a test session using the "Talk to Agent" button. This mode provides the agent with full session context, allowing for intelligent post-test reflections.
+- **Premium Gemini TTS:** All narrations and chat responses are powered by character-consistent **Gemini TTS** voices with descriptions used as style prompts for high-fidelity audio.
+- **Gender-Aware Voice Assignment:** Rekvin automatically detects the persona's gender from their name and description, assigning a corresponding male or female voice during creation.
 - **Visual Metrics Hub:** Drag-and-drop analysis. Connect "Session" nodes to "Metric" nodes to calculate quantitative friction, comprehension risks, and completion rates.
 - **Persona Calibration:** Every persona is assigned an AI-generated **Quality Score** based on the depth and diversity of its supporting evidence (Research, Assumptions, Ideas).
-- **Automated UX Reports:** Generate and **download** structured diagnostic reports that calculate persona-fit and identify specific UI bottlenecks with automated verdicts.
-- **Hybrid Audio Reliability:** A custom dual-path audio system. It prefers the low-latency raw PCM stream from Vertex AI, but includes an intelligent **Web Speech TTS fallback** that reads the agent's transcript aloud if the raw stream is suppressed by browser or model state.
+- **Automated UX Reports:** Generate structured diagnostic reports that calculate persona-fit and identify specific UI bottlenecks with automated verdicts.
+- **Hybrid Audio Reliability:** A custom dual-path audio system. It prefers the low-latency raw PCM stream from Vertex AI during live sessions, but uses a robust **Gemini TTS queueing system** for thoughts, post-session debriefs, and reliability fallbacks.
 
 ## 🚀 Getting Started
 

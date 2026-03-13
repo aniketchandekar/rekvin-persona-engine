@@ -75,6 +75,7 @@ export interface SavedSession {
     }
   };
   mode?: 'vision' | 'playwright';
+  voiceName?: string;
   agentThoughts?: AgentThought[];
   agentScreenshots?: AgentScreenshot[];
 }

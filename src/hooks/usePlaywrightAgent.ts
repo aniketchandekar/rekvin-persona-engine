@@ -15,6 +15,8 @@ export function usePlaywrightAgent() {
     const [userTranscript, setUserTranscript] = useState<string>('');
     const [agentTranscript, setAgentTranscript] = useState<string>('');
     const [transcripts, setTranscripts] = useState<{ role: 'user' | 'agent', text: string, timestamp: number }[]>([]);
+    const [personaVoice, setPersonaVoice] = useState<string>('Puck');
+    const [personaContent, setPersonaContent] = useState<string>('');
 
     const sessionIdRef = useRef<string | null>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
@@ -27,9 +29,8 @@ export function usePlaywrightAgent() {
     // TTS fallback: tracks if real PCM audio has been received this session
     const hasPcmAudioRef = useRef<boolean>(false);
     // TTS speech queue for reliable, non-overlapping speech
-    const ttsSpeakingRef = useRef<boolean>(false);
-    const ttsQueueRef = useRef<{ text: string; onStart?: () => void }[]>([]);
-    const ttsUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+    const ttsAudioQueueRef = useRef<string[]>([]);
+    const isTtsPlayingRef = useRef<boolean>(false);
     const isLiveApiRef = useRef<boolean>(false);
 
     // Schedules a raw PCM base64 chunk (24kHz, 16-bit, mono) into a gapless audio stream
@@ -87,64 +88,71 @@ export function usePlaywrightAgent() {
         }
     }, []);
 
-    // ── TTS FALLBACK SPEECH ────────────────────────────────────────────────
-    // Queue text to speak via browser SpeechSynthesis when PCM audio is unavailable
-    const speakText = useCallback((text: string, onStart?: () => void) => {
-        if (!text || text.trim().length === 0) return;
-        ttsQueueRef.current.push({ text, onStart });
-        processTtsQueue();
-    }, []);
+    const playNextTts = useCallback(() => {
+        if (isTtsPlayingRef.current || ttsAudioQueueRef.current.length === 0) {
+            setIsSpeaking(isTtsPlayingRef.current);
+            return;
+        }
+        
+        const base64 = ttsAudioQueueRef.current.shift();
+        if (!base64) return;
 
-    const processTtsQueue = useCallback(() => {
-        if (ttsSpeakingRef.current || ttsQueueRef.current.length === 0) return;
-        const item = ttsQueueRef.current.shift();
-        if (!item) return;
-
-        ttsSpeakingRef.current = true;
+        isTtsPlayingRef.current = true;
         setIsSpeaking(true);
-
-        const utterance = new SpeechSynthesisUtterance(item.text);
-        ttsUtteranceRef.current = utterance;
-
-        // Pick a natural-sounding voice
-        const voices = window.speechSynthesis.getVoices();
-        const preferred = voices.find(v => v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('google') || (v.lang.startsWith('en') && !v.name.includes('compact')));
-        if (preferred) utterance.voice = preferred;
-
-        utterance.rate = 1.05;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
-
-        // Reveal transcript text when speech actually begins
-        utterance.onstart = () => {
-            if (item.onStart) item.onStart();
-        };
-
-        utterance.onend = () => {
-            ttsSpeakingRef.current = false;
-            ttsUtteranceRef.current = null;
-            if (ttsQueueRef.current.length > 0) {
-                processTtsQueue();
-            } else {
-                setIsSpeaking(false);
-            }
-        };
-        utterance.onerror = () => {
-            ttsSpeakingRef.current = false;
-            ttsUtteranceRef.current = null;
-            // Still reveal text even if speech fails
-            if (item.onStart) item.onStart();
-            processTtsQueue();
-        };
-
-        window.speechSynthesis.speak(utterance);
+        
+        try {
+            const audio = new Audio(`data:audio/mp3;base64,${base64}`);
+            audio.onended = () => {
+                isTtsPlayingRef.current = false;
+                playNextTts();
+            };
+            audio.onerror = (e) => {
+                console.error("TTS Audio playback error", e);
+                isTtsPlayingRef.current = false;
+                playNextTts();
+            };
+            audio.play().catch(err => {
+                console.error("TTS Play blocked or failed:", err);
+                isTtsPlayingRef.current = false;
+                playNextTts();
+            });
+        } catch (err) {
+            isTtsPlayingRef.current = false;
+            playNextTts();
+        }
     }, []);
+
+    // ── TTS FALLBACK SPEECH ────────────────────────────────────────────────
+    // Queue text to speak via Gemini TTS
+    const speakText = useCallback(async (text: string, onStart?: () => void) => {
+        if (!text || text.trim().length === 0) return;
+        
+        try {
+            const res = await fetch('/api/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    text, 
+                    voiceName: personaVoice,
+                    prompt: personaContent 
+                })
+            });
+            if (!res.ok) throw new Error('Custom TTS failed');
+            const data = await res.json();
+            if (data.audioBase64) {
+                if (onStart) onStart();
+                ttsAudioQueueRef.current.push(data.audioBase64);
+                playNextTts();
+            }
+        } catch (err) {
+            console.error('Custom TTS Speak error:', err);
+            if (onStart) onStart();
+        }
+    }, [personaVoice, personaContent, playNextTts]);
 
     const stopTts = useCallback(() => {
-        window.speechSynthesis.cancel();
-        ttsSpeakingRef.current = false;
-        ttsQueueRef.current = [];
-        ttsUtteranceRef.current = null;
+        ttsAudioQueueRef.current = [];
+        isTtsPlayingRef.current = false;
         setIsSpeaking(false);
     }, []);
 
@@ -266,6 +274,8 @@ export function usePlaywrightAgent() {
         setStatusMessage('Starting agent...');
         setUserTranscript('');
         setAgentTranscript('');
+        setPersonaVoice(persona.data?.voiceName || persona.voiceName || 'Puck');
+        setPersonaContent(persona.data?.content || persona.content || '');
 
         const sessionId = `session-${Date.now()}`;
         sessionIdRef.current = sessionId;
@@ -314,7 +324,10 @@ export function usePlaywrightAgent() {
         evtSource.addEventListener('thought', (e) => {
             const data: AgentThought = JSON.parse((e as MessageEvent).data);
             setThoughts(prev => [...prev, data]);
-            // Thoughts are tool-call actions; speech comes from agent_transcript only
+            // Auto-read the thought as it appears
+            if (data.thought) {
+                speakText(data.thought);
+            }
         });
 
         evtSource.addEventListener('action_result', (e) => {
@@ -386,11 +399,11 @@ export function usePlaywrightAgent() {
                 }
             };
 
-            if (text && !hasPcmAudioRef.current && !isLiveApiRef.current) {
+            if (text && !hasPcmAudioRef.current) {
                 // Defer showing transcript until TTS actually starts speaking (Fallback only)
                 speakText(text, () => handleAgentTranscript(text));
             } else {
-                // If PCM audio is active OR we are in Live API mode, show transcript immediately 
+                // If PCM audio is active, show transcript immediately 
                 handleAgentTranscript(text);
             }
         });
@@ -424,6 +437,7 @@ export function usePlaywrightAgent() {
                         label: persona.data?.label || persona.label || 'Unknown Persona',
                         content: persona.data?.content || persona.content || '',
                         fields: persona.data?.fields || persona.fields || {},
+                        voiceName: persona.data?.voiceName || persona.voiceName || 'Puck',
                     },
                 }),
             });

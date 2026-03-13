@@ -938,13 +938,23 @@ function FreeBuildCanvas() {
           data: { ...n.data, content: newContent }
         } : n));
 
-        // Also regenerate fields for this node
+        // Also regenerate fields for this node (and voice for personas)
         const newFieldsStr = await geminiService.generateFields(currentNode.type, newContent);
+        
+        let detectedVoice = currentNode.data.voiceName;
+        if (currentNode.type === 'persona') {
+          detectedVoice = await geminiService.detectPersonaVoice(currentNode.data.label as string, newContent);
+        }
+
         try {
           const newFields = JSON.parse(newFieldsStr);
           setNodes(nds => nds.map(n => n.id === currentNode.id ? {
             ...n,
-            data: { ...n.data, fields: newFields }
+            data: { 
+              ...n.data, 
+              fields: newFields,
+              voiceName: currentNode.type === 'persona' ? detectedVoice : n.data.voiceName
+            }
           } : n));
         } catch (e) {
           console.error("Failed to parse fields for node", currentNode.id);

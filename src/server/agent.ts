@@ -328,16 +328,23 @@ Use this log to answer questions about what you have done, what failed, or what 
 
 // 6. Text-to-Speech endpoint (used by PersonaChatModal)
 app.post('/api/tts', async (req, res) => {
-    const { text, voiceName } = req.body;
+    const { text, voiceName, prompt } = req.body;
     if (!text) return res.status(400).json({ error: 'Text is required' });
 
     try {
         const accessToken = await getAccessToken();
         const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize`;
         
-        let gcVoiceName = 'en-US-Journey-F'; // default female
-        if (voiceName === 'Fenrir') gcVoiceName = 'en-US-Journey-D'; // male
-        if (voiceName === 'Aoede') gcVoiceName = 'en-US-Journey-F'; // female
+        // 30 Gemini Voices
+        const GEMINI_VOICES = [
+            'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 
+            'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 
+            'Gacrux', 'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Pulcherrima', 
+            'Puck', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 
+            'Umbriel', 'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'
+        ];
+        
+        const selectedVoice = GEMINI_VOICES.includes(voiceName) ? voiceName : 'Puck';
 
         const response = await fetch(ttsUrl, {
             method: 'POST',
@@ -347,9 +354,18 @@ app.post('/api/tts', async (req, res) => {
                 'x-goog-user-project': GCP_PROJECT_ID
             },
             body: JSON.stringify({
-                input: { text },
-                voice: { languageCode: 'en-US', name: gcVoiceName },
-                audioConfig: { audioEncoding: 'LINEAR16', sampleRateHertz: 24000 }
+                input: { 
+                    text,
+                    prompt: prompt || undefined
+                },
+                voice: { 
+                    languageCode: 'en-US', 
+                    name: selectedVoice,
+                    model_name: 'gemini-2.5-flash-tts'
+                },
+                audioConfig: { 
+                    audioEncoding: 'MP3'
+                }
             })
         });
 
@@ -468,7 +484,7 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
                             speechConfig: {
                                 voiceConfig: {
                                     prebuiltVoiceConfig: {
-                                        voiceName: persona.voice_name || 'Puck'
+                                        voiceName: persona.voiceName || persona.voice_name || 'Puck'
                                     }
                                 }
                             }
@@ -967,7 +983,7 @@ wss.on('connection', (ws, req) => {
                                 speechConfig: {
                                     voiceConfig: {
                                         prebuiltVoiceConfig: {
-                                            voiceName: persona?.data?.voice_name || persona?.voice_name || 'Leda'
+                                            voiceName: persona?.data?.voiceName || persona?.voiceName || persona?.data?.voice_name || persona?.voice_name || 'Puck'
                                         }
                                     }
                                 }

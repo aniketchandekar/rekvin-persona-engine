@@ -249,5 +249,34 @@ export const geminiService = {
       console.error("Failed to parse Gemini JSON response", e);
       return {};
     }
+  },
+
+  async detectPersonaVoice(name: string, content: string): Promise<string> {
+    const prompt = `Determine the gender of this persona based on their name: "${name}" and description: "${content}".
+    Return ONLY a JSON object with this schema:
+    {
+      "gender": "male" | "female" | "neutral"
+    }
+    
+    Be decisive. If it's ambiguous, return "neutral".`;
+
+    try {
+      const result = await this.generateJSON(prompt, {
+        type: 'OBJECT',
+        properties: {
+          gender: { type: 'STRING', enum: ['male', 'female', 'neutral'] }
+        }
+      }, 'gemini-2.5-flash');
+
+      const gender = result.gender || 'neutral';
+      
+      // Mapping to specific premium voices
+      if (gender === 'female') return 'Aoede';
+      if (gender === 'male') return 'Charon';
+      return 'Puck';
+    } catch (error) {
+      console.error("Voice detection error:", error);
+      return 'Puck';
+    }
   }
 };

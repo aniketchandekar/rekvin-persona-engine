@@ -275,13 +275,22 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
       })
     );
 
-    // If content changed, regenerate the fields
+    // If content changed, regenerate the fields (and voice for personas)
     if (finalContent !== data.content) {
       setIsGeneratingFields(true);
       try {
         const { geminiService } = await import('../services/geminiService');
-        const result = await geminiService.generateFields(type, finalContent);
-        const newFields = JSON.parse(result);
+        
+        // 1. Regenerate fields
+        const fieldsResult = await geminiService.generateFields(type, finalContent);
+        const newFields = JSON.parse(fieldsResult);
+
+        // 2. If persona, detect voice
+        let detectedVoice = data.voiceName;
+        if (type === 'persona') {
+          // Detect voice based on name (data.label) and new content
+          detectedVoice = await geminiService.detectPersonaVoice(data.label, finalContent);
+        }
 
         setNodes((nds) =>
           nds.map((node) => {
@@ -291,6 +300,7 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
                 data: {
                   ...node.data,
                   fields: newFields,
+                  voiceName: type === 'persona' ? detectedVoice : node.data.voiceName,
                 },
               };
             }
@@ -298,7 +308,7 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
           })
         );
       } catch (error) {
-        console.error("Failed to update fields:", error);
+        console.error("Failed to update node metadata:", error);
       } finally {
         setIsGeneratingFields(false);
       }
@@ -403,12 +413,47 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
               <span className="leading-snug">Updating stats...</span>
             </div>
           ) : (
-            Object.entries(data.fields || {}).map(([key, value]) => (
-              <div key={key} className="flex items-start gap-2 text-[11px] text-cream/40 bg-ink-3 px-2.5 py-1.5 rounded-md">
-                <span className={`font-mono text-[10px] shrink-0 pt-px ${dotColors[type].replace('bg-', 'text-')}`}>{key}</span>
-                <span className="leading-snug break-all">{value as string}</span>
-              </div>
-            ))
+            <>
+              {Object.entries(data.fields || {}).map(([key, value]) => (
+                <div key={key} className="flex items-start gap-2 text-[11px] text-cream/40 bg-ink-3 px-2.5 py-1.5 rounded-md">
+                  <span className={`font-mono text-[10px] shrink-0 pt-px ${dotColors[type].replace('bg-', 'text-')}`}>{key}</span>
+                  <span className="leading-snug break-all">{value as string}</span>
+                </div>
+              ))}
+              
+              {type === 'persona' && (
+                <div className="flex items-center gap-2 text-[11px] text-cream/40 bg-ink-3 px-2.5 py-1.5 rounded-md border border-node-persona/20">
+                  <span className="font-mono text-[10px] shrink-0 pt-px text-node-persona">VOICE</span>
+                  <select 
+                    value={data.voiceName || 'Puck'}
+                    onChange={(e) => {
+                      setNodes((nds) =>
+                        nds.map((node) => {
+                          if (node.id === id) {
+                            return {
+                              ...node,
+                              data: { ...node.data, voiceName: e.target.value },
+                            };
+                          }
+                          return node;
+                        })
+                      );
+                    }}
+                    className="bg-transparent text-cream/60 outline-none cursor-pointer hover:text-cream transition-colors w-full"
+                  >
+                    {[
+                      'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 
+                      'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 
+                      'Gacrux', 'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Pulcherrima', 
+                      'Puck', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 
+                      'Umbriel', 'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'
+                    ].sort().map(v => (
+                      <option key={v} value={v} className="bg-ink-2">{v}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </>
           )}
         </div>
 
