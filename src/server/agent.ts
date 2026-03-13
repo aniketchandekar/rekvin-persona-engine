@@ -433,6 +433,13 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
         if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
 
+    // Handle dialogs (alerts, confirms, prompts) automatically
+    page.on('dialog', async dialog => {
+        console.log(`[${sessionId}] Browser dialog detected (${dialog.type()}): "${dialog.message()}". Automatically accepting.`);
+        session.sessionLog.push(`[System] Automatically accepted ${dialog.type()} dialog: "${dialog.message()}"`);
+        await dialog.accept().catch(() => {});
+    });
+
     const session: AgentSession = { 
         browser, 
         page, 
@@ -455,7 +462,8 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
 
     try {
         // ── 2. NAVIGATE TO TARGET ────────────────────────────────────────
-        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        // Use networkidle for modern SPAs to ensure all initial requests complete
+        await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30_000 });
         await page.waitForTimeout(2000);
 
         sendEvent(sessionId, 'status', {
@@ -782,57 +790,77 @@ async function sendScreenshotToGemini(session: AgentSession, sessionId: string) 
 // ══════════════════════════════════════════════════════════════════════
 
 async function executeTool(page: Page, toolName: string, args: any): Promise<{ success: boolean; detail: string }> {
-    const timeout = 4000;
+    const timeout = 6000; // Increased timeout for better stability
 
-    // Auto-fix common LLM hallucinated selectors
-    let safeSelector = args.selector;
-    if (safeSelector && typeof safeSelector === 'string') {
-        safeSelector = safeSelector.replace(/:contains\((.*?)\)/g, ':has-text($1)');
+    // ── Pre-process selector ──────────────────────────────────────────
+    let selector = args.selector;
+    if (selector && typeof selector === 'string') {
+        // Auto-fix common LLM hallucinated selectors
+        selector = selector.replace(/:contains\((.*?)\)/g, ':has-text($1)');
     }
 
     try {
+        // ── Handle finish_session separately ──────────────────────────
+        if (toolName === 'finish_session') {
+            return { success: true, detail: `Session finished: ${args.reason || 'completed'}` };
+        }
+
+        // ── Initialize Locator ────────────────────────────────────────
+        // Support role-based locators if provided in role=type[name="Label"] format
+        let locator;
+        if (selector?.startsWith('role=')) {
+            const roleMatch = selector.match(/role=(\w+)\[name="([^"]+)"\]/);
+            if (roleMatch) {
+                const [, role, name] = roleMatch;
+                locator = page.getByRole(role as any, { name, exact: false });
+            } else {
+                locator = page.locator(selector);
+            }
+        } else if (selector) {
+            locator = page.locator(selector);
+        }
+
+        // ── Execute Actions ───────────────────────────────────────────
         switch (toolName) {
             case 'click_element': {
-                if (!safeSelector) return { success: false, detail: 'No selector provided for click' };
-                await page.click(safeSelector, { timeout });
-                return { success: true, detail: `Clicked "${safeSelector}"` };
+                if (!locator) return { success: false, detail: 'No selector provided for click' };
+                await locator.click({ timeout });
+                return { success: true, detail: `Clicked "${selector}"` };
             }
 
             case 'type_text': {
-                if (!safeSelector || !args.value) return { success: false, detail: 'Missing selector or value for type' };
-                try {
-                    await page.fill(safeSelector, args.value, { timeout });
-                } catch {
-                    await page.click(safeSelector, { timeout });
-                    await page.keyboard.type(args.value, { delay: 50 });
-                }
-                return { success: true, detail: `Typed "${args.value}" into "${safeSelector}"` };
+                if (!locator || !args.value) return { success: false, detail: 'Missing selector or value for type' };
+                // fill() is safer as it clears existing value and waits for visibility/editability
+                await locator.fill(args.value, { timeout });
+                return { success: true, detail: `Typed into "${selector}"` };
             }
 
             case 'scroll_page': {
+                // Better than just PageDown: scroll until the next batch of content is likely in view
                 await page.keyboard.press('PageDown');
+                await page.waitForTimeout(500); // Allow brief settling
                 return { success: true, detail: 'Scrolled down one page' };
             }
 
             case 'hover_element': {
-                if (!safeSelector) return { success: false, detail: 'No selector for hover' };
-                await page.hover(safeSelector, { timeout });
-                return { success: true, detail: `Hovered over "${safeSelector}"` };
-            }
-
-            case 'finish_session': {
-                return { success: true, detail: `Session finished: ${args.reason}` };
+                if (!locator) return { success: false, detail: 'No selector for hover' };
+                await locator.hover({ timeout });
+                return { success: true, detail: `Hovered over "${selector}"` };
             }
 
             default:
                 return { success: false, detail: `Unknown tool: "${toolName}"` };
         }
     } catch (err: any) {
-        // Provide more granular feedback for timeouts
-        const isTimeout = err?.message?.toLowerCase().includes('timeout');
-        const detail = isTimeout 
-            ? `Action failed: Timeout 4000ms exceeded. The element "${safeSelector}" may not be visible, clickable, or exists with a different selector.`
-            : `Tool "${toolName}" failed: ${err?.message?.split('\n')[0]?.slice(0, 200) || err?.message}`;
+        // Provide granular feedback for specific failure modes from Locator API
+        const errMsg = err?.message || 'Unknown error';
+        const isTimeout = errMsg.toLowerCase().includes('timeout');
+        const isHidden = errMsg.toLowerCase().includes('not visible');
+        
+        let detail = `Tool "${toolName}" failed on "${selector}"`;
+        if (isTimeout) detail += ': Timeout exceeded. Element might not exist or is taking too long to load.';
+        else if (isHidden) detail += ': Element exists but is currently hidden or obscured.';
+        else detail += `: ${errMsg.split('\n')[0].slice(0, 150)}`;
             
         return { success: false, detail };
     }

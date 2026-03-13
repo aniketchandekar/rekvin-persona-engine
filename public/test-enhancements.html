@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rekvin Playwright Test</title>
+</head>
+<body>
+    <h1>Rekvin Playwright Enhancement Verification</h1>
+    <button id="alert-btn" onclick="alert('Hello from Alert!')">Trigger Alert</button>
+    <button id="confirm-btn" onclick="confirm('Are you sure?')">Trigger Confirm</button>
+    <div id="dynamic-content"></div>
+    <button id="load-btn" onclick="setTimeout(() => { document.getElementById('dynamic-content').innerHTML = '<p id=\'loaded-text\'>Dynamic Content Loaded</p>'; }, 2000)">Load Dynamic Content</button>
+</body>
+</html>
