@@ -112,6 +112,7 @@ interface AgentSession {
     playwright?: {
         screenshotInterval: ReturnType<typeof setInterval> | null;
     };
+    mousePos: { x: number; y: number };
 }
 const activeSessions = new Map<string, AgentSession>();
 
@@ -493,6 +494,43 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
         if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
 
+    // Inject visual cursor
+    await page.addInitScript(() => {
+        const cursor = document.createElement('div');
+        cursor.id = 'playwright-visual-cursor';
+        cursor.style.position = 'fixed';
+        cursor.style.zIndex = '999999';
+        cursor.style.width = '20px';
+        cursor.style.height = '20px';
+        cursor.style.borderRadius = '50%';
+        cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.7)'; // Red-orange
+        cursor.style.border = '2px solid white';
+        cursor.style.pointerEvents = 'none';
+        cursor.style.transition = 'transform 0.1s ease, background-color 0.2s ease, width 0.2s ease, height 0.2s ease';
+        cursor.style.transform = 'translate(-50%, -50%)';
+        cursor.style.left = '0px';
+        cursor.style.top = '0px';
+        cursor.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 4px; height: 4px; background: white; border-radius: 50%;"></div>';
+        document.body.appendChild(cursor);
+
+        window.addEventListener('mousemove', (e) => {
+            cursor.style.left = `${e.clientX}px`;
+            cursor.style.top = `${e.clientY}px`;
+        });
+
+        window.addEventListener('mousedown', () => {
+            cursor.style.backgroundColor = 'rgba(255, 215, 0, 0.9)'; // Golden on click
+            cursor.style.width = '15px';
+            cursor.style.height = '15px';
+        });
+
+        window.addEventListener('mouseup', () => {
+            cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.7)';
+            cursor.style.width = '20px';
+            cursor.style.height = '20px';
+        });
+    });
+
     // Handle dialogs (alerts, confirms, prompts) automatically
     page.on('dialog', async dialog => {
         console.log(`[${sessionId}] Browser dialog detected (${dialog.type()}): "${dialog.message()}". Automatically accepting.`);
@@ -507,7 +545,8 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
         micActive: false, 
         geminiWs: undefined, 
         sessionLog: [],
-        playwright: { screenshotInterval: null } 
+        playwright: { screenshotInterval: null },
+        mousePos: { x: 0, y: 0 }
     };
     activeSessions.set(sessionId, session);
 
@@ -736,7 +775,7 @@ RULES:
                         });
 
                         // Execute the tool
-                        const result = await executeTool(page, fc.name, fc.args || {});
+                        const result = await executeTool(page, fc.name, fc.args || {}, session);
 
                         sendEvent(sessionId, 'action_result', {
                             step: stepCount - 1,
@@ -865,10 +904,48 @@ async function sendScreenshotToGemini(session: AgentSession, sessionId: string) 
 }
 
 // ══════════════════════════════════════════════════════════════════════
+//  HUMAN-LIKE MOUSE MOVEMENT
+// ══════════════════════════════════════════════════════════════════════
+
+async function humanMove(page: Page, targetX: number, targetY: number, session: AgentSession) {
+    const startX = session.mousePos.x;
+    const startY = session.mousePos.y;
+    
+    // Calculate distance
+    const distance = Math.sqrt(Math.pow(targetX - startX, 2) + Math.pow(targetY - startY, 2));
+    if (distance < 5) return; // Already there
+
+    // Number of steps based on distance (more steps for longer distance)
+    const steps = Math.max(10, Math.min(30, Math.floor(distance / 20)));
+    
+    // Simple quadratic Bezier for curved movement
+    // Control point is roughly in the middle but offset randomly
+    const midX = (startX + targetX) / 2;
+    const midY = (startY + targetY) / 2;
+    const offsetX = (Math.random() - 0.5) * distance * 0.5;
+    const offsetY = (Math.random() - 0.5) * distance * 0.5;
+    const cpX = midX + offsetX;
+    const cpY = midY + offsetY;
+
+    for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        // Bezier formula: (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
+        const x = Math.pow(1 - t, 2) * startX + 2 * (1 - t) * t * cpX + Math.pow(t, 2) * targetX;
+        const y = Math.pow(1 - t, 2) * startY + 2 * (1 - t) * t * cpY + Math.pow(t, 2) * targetY;
+        
+        await page.mouse.move(x, y);
+        // Vary the wait time slightly
+        await page.waitForTimeout(Math.random() * 10 + 5);
+    }
+    
+    session.mousePos = { x: targetX, y: targetY };
+}
+
+// ══════════════════════════════════════════════════════════════════════
 //  TOOL EXECUTOR
 // ══════════════════════════════════════════════════════════════════════
 
-async function executeTool(page: Page, toolName: string, args: any): Promise<{ success: boolean; detail: string }> {
+async function executeTool(page: Page, toolName: string, args: any, session: AgentSession): Promise<{ success: boolean; detail: string }> {
     const timeout = 6000; // Increased timeout for better stability
 
     // ── Pre-process selector ──────────────────────────────────────────
@@ -903,12 +980,24 @@ async function executeTool(page: Page, toolName: string, args: any): Promise<{ s
         switch (toolName) {
             case 'click_element': {
                 if (!locator) return { success: false, detail: 'No selector provided for click' };
+                
+                const box = await locator.boundingBox();
+                if (box) {
+                    await humanMove(page, box.x + box.width / 2, box.y + box.height / 2, session);
+                }
+                
                 await locator.click({ timeout });
                 return { success: true, detail: `Clicked "${selector}"` };
             }
 
             case 'type_text': {
                 if (!locator || !args.value) return { success: false, detail: 'Missing selector or value for type' };
+                
+                const box = await locator.boundingBox();
+                if (box) {
+                    await humanMove(page, box.x + box.width / 2, box.y + box.height / 2, session);
+                }
+                
                 // fill() is safer as it clears existing value and waits for visibility/editability
                 await locator.fill(args.value, { timeout });
                 return { success: true, detail: `Typed into "${selector}"` };
@@ -923,6 +1012,12 @@ async function executeTool(page: Page, toolName: string, args: any): Promise<{ s
 
             case 'hover_element': {
                 if (!locator) return { success: false, detail: 'No selector for hover' };
+                
+                const box = await locator.boundingBox();
+                if (box) {
+                    await humanMove(page, box.x + box.width / 2, box.y + box.height / 2, session);
+                }
+                
                 await locator.hover({ timeout });
                 return { success: true, detail: `Hovered over "${selector}"` };
             }

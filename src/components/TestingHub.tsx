@@ -271,8 +271,13 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
   };
 
   const handleStop = () => {
+    if (audioRef.current) {
+        audioRef.current.pause();
+        setPlayingThoughtId(null);
+    }
+    
     if (testMode === 'vision') {
-      setVisionStatus('completed');
+      stopVisionTest();
     } else {
       playwright.stopTest();
     }

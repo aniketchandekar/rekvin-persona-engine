@@ -32,6 +32,7 @@ export function usePlaywrightAgent() {
     const ttsAudioQueueRef = useRef<string[]>([]);
     const isTtsPlayingRef = useRef<boolean>(false);
     const isLiveApiRef = useRef<boolean>(false);
+    const currentTtsAudioRef = useRef<HTMLAudioElement | null>(null);
 
     // Schedules a raw PCM base64 chunk (24kHz, 16-bit, mono) into a gapless audio stream
     const schedulePcmChunk = useCallback((base64: string) => {
@@ -104,16 +105,20 @@ export function usePlaywrightAgent() {
             const audio = new Audio(`data:audio/mp3;base64,${base64}`);
             audio.onended = () => {
                 isTtsPlayingRef.current = false;
+                currentTtsAudioRef.current = null;
                 playNextTts();
             };
             audio.onerror = (e) => {
                 console.error("TTS Audio playback error", e);
                 isTtsPlayingRef.current = false;
+                currentTtsAudioRef.current = null;
                 playNextTts();
             };
+            currentTtsAudioRef.current = audio;
             audio.play().catch(err => {
                 console.error("TTS Play blocked or failed:", err);
                 isTtsPlayingRef.current = false;
+                currentTtsAudioRef.current = null;
                 playNextTts();
             });
         } catch (err) {
@@ -151,6 +156,10 @@ export function usePlaywrightAgent() {
     }, [personaVoice, personaContent, playNextTts]);
 
     const stopTts = useCallback(() => {
+        if (currentTtsAudioRef.current) {
+            currentTtsAudioRef.current.pause();
+            currentTtsAudioRef.current = null;
+        }
         ttsAudioQueueRef.current = [];
         isTtsPlayingRef.current = false;
         setIsSpeaking(false);
@@ -469,6 +478,12 @@ export function usePlaywrightAgent() {
                 // Server may already be down
             }
         }
+        
+        // Ensure PCM audio context is stopped
+        if (outputAudioCtxRef.current && outputAudioCtxRef.current.state !== 'closed') {
+            outputAudioCtxRef.current.suspend().catch(() => {});
+        }
+        
         eventSourceRef.current?.close();
         setStatus('completed');
         setStatusMessage('Test stopped by user.');
