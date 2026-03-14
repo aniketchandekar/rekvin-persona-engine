@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Brain, FilePlus2, MessageSquare, Plus, Save, Trash2, ArrowRight, Play, Layout, Sparkles, Send, Search, Download, CheckCircle2, ChevronRight, X, AlertCircle, BarChart3, Presentation, Target, UserCircle, Wand2, RefreshCw, BoxSelect, Terminal, FileCode2, Globe, Lightbulb, Mic, Square, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Brain, FilePlus2, MessageSquare, Plus, Save, Trash2, ArrowRight, Play, Layout, Sparkles, Send, Search, Download, CheckCircle2, ChevronRight, X, AlertCircle, BarChart3, Presentation, Target, UserCircle, Wand2, RefreshCw, BoxSelect, Terminal, FileCode2, Globe, Lightbulb, Mic, Square, PanelLeftClose, PanelLeftOpen, Info } from 'lucide-react';
 import { ReactFlow, Background, Controls, addEdge, applyNodeChanges, applyEdgeChanges, Node, Edge, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { nodeTypes } from './components/CustomNodes';
@@ -92,6 +92,14 @@ export default function App() {
     });
   };
 
+  const triggerOnboarding = (type: OnboardingType) => {
+    setViewedOnboarding(prev => {
+      const next = { ...prev, [type]: false };
+      localStorage.setItem('rekvin_onboarding', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const allSessions = useMemo(() => {
     return devMode ? [...PRESET_SESSIONS, ...savedSessions] : savedSessions;
   }, [devMode, savedSessions]);
@@ -151,7 +159,7 @@ export default function App() {
 
       {/* Sub Nav for Personas */}
       {mainTab === 'personas' && (
-        <div className="h-10 border-b border-rule bg-ink-2/80 backdrop-blur-md flex items-end px-12 z-40">
+        <div className="h-10 border-b border-rule bg-ink-2/80 backdrop-blur-md flex items-end justify-between px-12 z-40">
           <div className="flex gap-6 h-full">
             <button onClick={() => setPersonaSubTab('free')} className={`text-[10px] uppercase tracking-widest transition-all h-full flex items-center gap-1.5 border-b-2 px-1 ${personaSubTab === 'free' ? 'border-node-idea text-node-idea' : 'border-transparent text-cream-dim hover:text-cream hover:border-cream/30'}`}>
               {personaSubTab === 'free' && <Sparkles size={10} className="animate-pulse" />}
@@ -163,12 +171,19 @@ export default function App() {
               {savedPersonas.length > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[8px] ${personaSubTab === 'saved' ? 'bg-node-idea/20 text-node-idea' : 'bg-ink-3 text-cream-dim'}`}>{savedPersonas.length}</span>}
             </button>
           </div>
+          <button
+            onClick={() => triggerOnboarding('personas')}
+            className="h-full flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-cream-dim hover:text-node-idea transition-colors px-1 border-b-2 border-transparent"
+          >
+            <Info size={12} />
+            Guide
+          </button>
         </div>
       )}
 
       {/* Sub Nav for Testing */}
       {mainTab === 'testing' && (
-        <div className="h-10 border-b border-rule bg-ink-2/80 backdrop-blur-md flex items-end px-12 z-40">
+        <div className="h-10 border-b border-rule bg-ink-2/80 backdrop-blur-md flex items-end justify-between px-12 z-40">
           <div className="flex gap-6 h-full">
             <button onClick={() => setTestingSubTab('simulation')} className={`text-[10px] uppercase tracking-widest transition-all h-full flex items-center border-b-2 px-1 ${testingSubTab === 'simulation' ? 'border-node-idea text-node-idea' : 'border-transparent text-cream-dim hover:text-cream hover:border-cream/30'}`}>Simulation</button>
             <button onClick={() => setTestingSubTab('saved')} className={`text-[10px] uppercase tracking-widest transition-all h-full flex items-center gap-1.5 border-b-2 px-1 ${testingSubTab === 'saved' ? 'border-node-idea text-node-idea' : 'border-transparent text-cream-dim hover:text-cream hover:border-cream/30'}`}>
@@ -176,6 +191,30 @@ export default function App() {
               {allSessions.length > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[8px] ${testingSubTab === 'saved' ? 'bg-node-idea/20 text-node-idea' : 'bg-ink-3 text-cream-dim'}`}>{allSessions.length}</span>}
             </button>
           </div>
+          <button
+            onClick={() => triggerOnboarding('testing')}
+            className="h-full flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-cream-dim hover:text-node-idea transition-colors px-1 border-b-2 border-transparent"
+          >
+            <Info size={12} />
+            Guide
+          </button>
+        </div>
+      )}
+
+      {mainTab === 'metrics' && (
+        <div className="h-10 border-b border-rule bg-ink-2/80 backdrop-blur-md flex items-end justify-between px-12 z-40">
+          <div className="flex gap-6 h-full">
+            <div className="text-[10px] uppercase tracking-widest transition-all h-full flex items-center border-b-2 px-1 border-node-idea text-node-idea">
+              Analytics Overview
+            </div>
+          </div>
+          <button
+            onClick={() => triggerOnboarding('metrics')}
+            className="h-full flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-cream-dim hover:text-node-idea transition-colors px-1 border-b-2 border-transparent"
+          >
+            <Info size={12} />
+            Guide
+          </button>
         </div>
       )}
 
