@@ -617,6 +617,12 @@ function FreeBuildCanvas() {
           .join('\n\n---\n\n');
 
         if (!parentContent) continue;
+        
+        // Skip if already has content
+        if (currentNode.data.content && (currentNode.data.content as string).trim() !== '' && currentNode.data.content !== 'Generating...') {
+          console.log(`Skipping generation for node ${nodeId} as it already has content.`);
+          continue;
+        }
 
         // Indicate generation
         setNodes(nds => nds.map(n => n.id === nodeId ? {
