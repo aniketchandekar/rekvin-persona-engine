@@ -739,6 +739,11 @@ RULES:
                             session.introComplete = true;
                             console.log(`[${sessionId}] Introduction turn complete. Starting observation loop...`);
 
+                            sendEvent(sessionId, 'status', {
+                                status: 'running',
+                                message: `Introduction complete. Testing session active.`,
+                            });
+
                             // Start the observation loop now that the intro is finished
                             try {
                                 await sendScreenshotToGemini(session, sessionId);
