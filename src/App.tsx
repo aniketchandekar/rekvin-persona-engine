@@ -583,101 +583,62 @@ function FreeBuildCanvas() {
     return () => window.removeEventListener('open-node-details', handleOpenDetails);
   }, []);
 
-  const findFlows = useCallback(() => {
-    // Find all paths of length >= 2
-    const adjacencyList = new Map<string, string[]>();
-    edges.forEach(edge => {
-      if (!adjacencyList.has(edge.source)) adjacencyList.set(edge.source, []);
-      adjacencyList.get(edge.source)!.push(edge.target);
-    });
-
-    const flows: { id: string, nodes: Node[] }[] = [];
-    const inDegree = new Map<string, number>();
-    nodes.forEach(n => inDegree.set(n.id, 0));
-    edges.forEach(e => inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1));
-
-    // Start from nodes with in-degree 0
-    const startNodes = nodes.filter(n => inDegree.get(n.id) === 0);
-
-    startNodes.forEach(startNode => {
-      const paths: Node[][] = [];
-      const dfs = (currentId: string, currentPath: Node[]) => {
-        const node = nodes.find(n => n.id === currentId);
-        if (!node) return;
-
-        const newPath = [...currentPath, node];
-        const neighbors = adjacencyList.get(currentId) || [];
-
-        if (neighbors.length === 0) {
-          if (newPath.length >= 2) {
-            paths.push(newPath);
-          }
-        } else {
-          neighbors.forEach(neighbor => dfs(neighbor, newPath));
-        }
-      };
-      dfs(startNode.id, []);
-
-      paths.forEach((path, index) => {
-        flows.push({ id: `flow-${startNode.id}-${index}`, nodes: path });
-      });
-    });
-
-    return flows;
-  }, [nodes, edges]);
-
-  const hasFlows = useMemo(() => findFlows().length > 0, [findFlows]);
-
-  const handleRunWorkflowClick = () => {
-    const flows = findFlows();
-    if (flows.length === 0) {
-      alert("Please connect at least 2 nodes to create a workflow.");
-      return;
-    }
-    if (flows.length === 1) {
-      executeFlow(flows[0].nodes);
-    } else {
-      setAvailableFlows(flows);
-      setShowFlowSelector(true);
-    }
-  };
-
-  const executeFlow = async (flowNodes: Node[]) => {
-    setShowFlowSelector(false);
+  const executeSmartWorkflow = async () => {
     setIsWorkflowRunning(true);
-
     try {
       const { geminiService } = await import('./services/geminiService');
 
-      // We iterate through the flow, updating each node based on the previous one
-      // We need to keep track of the updated content to pass to the next node
-      let previousContent = flowNodes[0].data.content as string;
+      // 1. Identify "Target" nodes (those with incoming edges)
+      const targetNodeIds = Array.from(new Set(edges.map(e => e.target)));
+      
+      // 2. Sort targets topologically (simple version: nodes with fewer upstream nodes first)
+      // This ensures if Flow is A -> B -> C, we generate B then C.
+      const getUpstreamCount = (id: string, visited = new Set<string>()): number => {
+        if (visited.has(id)) return 0;
+        visited.add(id);
+        const parents = edges.filter(e => e.target === id).map(e => e.source);
+        return parents.length + parents.reduce((acc, p) => acc + getUpstreamCount(p, visited), 0);
+      };
 
-      for (let i = 1; i < flowNodes.length; i++) {
-        const currentNode = flowNodes[i];
+      const sortedTargets = [...targetNodeIds].sort((a, b) => getUpstreamCount(a) - getUpstreamCount(b));
 
-        // Indicate that this node is currently generating
-        setNodes(nds => nds.map(n => n.id === currentNode.id ? {
+      for (const nodeId of sortedTargets) {
+        const currentNode = nodes.find(n => n.id === nodeId);
+        if (!currentNode) continue;
+
+        // Find all incoming parents
+        const parentEdges = edges.filter(e => e.target === nodeId);
+        const parents = nodes.filter(n => parentEdges.map(e => e.source).includes(n.id));
+        
+        // Only run if parents have content
+        const parentContent = parents
+          .filter(p => p.data.content && (p.data.content as string).trim() !== '' && p.data.content !== 'Generating...')
+          .map(p => `[${p.type}] (${p.data.label}): ${p.data.content}`)
+          .join('\n\n---\n\n');
+
+        if (!parentContent) continue;
+
+        // Indicate generation
+        setNodes(nds => nds.map(n => n.id === nodeId ? {
           ...n,
           data: { ...n.data, content: "Generating..." }
         } : n));
 
         const newContent = await geminiService.runWorkflowNode(
-          currentNode.type, 
-          currentNode.data.label as string, 
-          previousContent,
+          currentNode.type,
+          currentNode.data.label as string,
+          parentContent,
           currentNode.data.content as string
         );
 
-        // Update the node with new content
-        setNodes(nds => nds.map(n => n.id === currentNode.id ? {
+        // Update content
+        setNodes(nds => nds.map(n => n.id === nodeId ? {
           ...n,
           data: { ...n.data, content: newContent }
         } : n));
 
-        // Also regenerate fields for this node (and voice for personas)
+        // Regenerate fields/voice
         const newFieldsStr = await geminiService.generateFields(currentNode.type, newContent);
-        
         let detectedVoice = currentNode.data.voiceName;
         if (currentNode.type === 'persona') {
           detectedVoice = await geminiService.detectPersonaVoice(currentNode.data.label as string, newContent);
@@ -685,7 +646,7 @@ function FreeBuildCanvas() {
 
         try {
           const newFields = JSON.parse(newFieldsStr);
-          setNodes(nds => nds.map(n => n.id === currentNode.id ? {
+          setNodes(nds => nds.map(n => n.id === nodeId ? {
             ...n,
             data: { 
               ...n.data, 
@@ -694,10 +655,8 @@ function FreeBuildCanvas() {
             }
           } : n));
         } catch (e) {
-          console.error("Failed to parse fields for node", currentNode.id);
+          console.error("Failed to parse fields", e);
         }
-
-        previousContent = newContent;
       }
     } catch (error) {
       console.error("Workflow error:", error);
@@ -705,6 +664,14 @@ function FreeBuildCanvas() {
     } finally {
       setIsWorkflowRunning(false);
     }
+  };
+
+  const handleRunWorkflowClick = () => {
+    if (edges.length === 0) {
+      alert("Please connect at least 2 nodes to create a workflow.");
+      return;
+    }
+    executeSmartWorkflow();
   };
 
   const onNodesChange = useCallback(
@@ -891,62 +858,17 @@ function FreeBuildCanvas() {
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
           <button
             onClick={handleRunWorkflowClick}
-            disabled={isWorkflowRunning || !hasFlows}
-            className={`px-6 py-3 rounded-full backdrop-blur-md border transition-all flex items-center gap-3 text-sm font-sans font-medium shadow-2xl ${isWorkflowRunning ? 'bg-node-idea/20 border-node-idea/50 text-node-idea cursor-wait' : !hasFlows ? 'bg-ink-3/50 border-rule text-cream/30 cursor-not-allowed' : 'bg-ink-3/90 border-rule-2 text-cream hover:text-node-idea hover:border-node-idea/50'}`}
+            disabled={isWorkflowRunning || edges.length === 0}
+            className={`px-6 py-3 rounded-full backdrop-blur-md border transition-all flex items-center gap-3 text-sm font-sans font-medium shadow-2xl ${isWorkflowRunning ? 'bg-node-idea/20 border-node-idea/50 text-node-idea cursor-wait' : edges.length === 0 ? 'bg-ink-3/50 border-rule text-cream/30 cursor-not-allowed' : 'bg-ink-3/90 border-rule-2 text-cream hover:text-node-idea hover:border-node-idea/50'}`}
           >
             {isWorkflowRunning ? (
               <Sparkles size={16} className="animate-pulse" />
             ) : (
-              <Play size={16} fill="currentColor" className={!hasFlows ? 'opacity-50' : ''} />
+              <Play size={16} fill="currentColor" className={edges.length === 0 ? 'opacity-50' : ''} />
             )}
             {isWorkflowRunning ? 'Running Workflow...' : 'Run Workflow'}
           </button>
         </div>
-
-        {/* Flow Selector Modal */}
-        <AnimatePresence>
-          {showFlowSelector && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 flex items-center justify-center bg-ink/80 backdrop-blur-sm"
-            >
-              <motion.div
-                initial={{ scale: 0.9, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.9, y: 20 }}
-                className="bg-ink-2 border border-rule-2 rounded-2xl p-6 max-w-md w-full shadow-2xl"
-              >
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-display text-xl tracking-widest text-cream">Select Workflow</h3>
-                  <button onClick={() => setShowFlowSelector(false)} className="text-cream-dim hover:text-cream">
-                    <X size={20} />
-                  </button>
-                </div>
-                <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-2">
-                  {availableFlows.map((flow) => (
-                    <button
-                      key={flow.id}
-                      onClick={() => executeFlow(flow.nodes)}
-                      className="flex flex-col gap-2 p-4 rounded-xl border border-rule bg-ink-3 hover:border-node-idea/50 hover:bg-white/5 transition-all text-left group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono text-cream-dim">Flow ({flow.nodes.length} nodes)</span>
-                        <Play size={14} className="text-cream-dim group-hover:text-node-idea transition-colors" />
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-cream">
-                        <span className="truncate max-w-[120px]">{flow.nodes[0].data.label as React.ReactNode}</span>
-                        <span className="text-cream-dim">→</span>
-                        <span className="truncate max-w-[120px]">{flow.nodes[flow.nodes.length - 1].data.label as React.ReactNode}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Node Detail Panel */}
         <AnimatePresence>

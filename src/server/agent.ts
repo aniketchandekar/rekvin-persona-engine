@@ -481,66 +481,15 @@ function buildPersonaPrompt(persona: any): string {
 // ══════════════════════════════════════════════════════════════════════
 
 async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: any, goal?: string) {
-    // ── 1. LAUNCH BROWSER ────────────────────────────────────────────
-    const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-        viewport: { width: 1280, height: 800 },
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    });
-    const page = await context.newPage();
-
+    const personaPrompt = buildPersonaPrompt(persona);
+    let stepCount = 0;
+    const MAX_STEPS = 20;
     const consoleErrors: string[] = [];
-    page.on('console', msg => {
-        if (msg.type() === 'error') consoleErrors.push(msg.text());
-    });
 
-    // Inject visual cursor
-    await page.addInitScript(() => {
-        const cursor = document.createElement('div');
-        cursor.id = 'playwright-visual-cursor';
-        cursor.style.position = 'fixed';
-        cursor.style.zIndex = '999999';
-        cursor.style.width = '20px';
-        cursor.style.height = '20px';
-        cursor.style.borderRadius = '50%';
-        cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.7)'; // Red-orange
-        cursor.style.border = '2px solid white';
-        cursor.style.pointerEvents = 'none';
-        cursor.style.transition = 'transform 0.1s ease, background-color 0.2s ease, width 0.2s ease, height 0.2s ease';
-        cursor.style.transform = 'translate(-50%, -50%)';
-        cursor.style.left = '0px';
-        cursor.style.top = '0px';
-        cursor.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 4px; height: 4px; background: white; border-radius: 50%;"></div>';
-        document.body.appendChild(cursor);
-
-        window.addEventListener('mousemove', (e) => {
-            cursor.style.left = `${e.clientX}px`;
-            cursor.style.top = `${e.clientY}px`;
-        });
-
-        window.addEventListener('mousedown', () => {
-            cursor.style.backgroundColor = 'rgba(255, 215, 0, 0.9)'; // Golden on click
-            cursor.style.width = '15px';
-            cursor.style.height = '15px';
-        });
-
-        window.addEventListener('mouseup', () => {
-            cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.7)';
-            cursor.style.width = '20px';
-            cursor.style.height = '20px';
-        });
-    });
-
-    // Handle dialogs (alerts, confirms, prompts) automatically
-    page.on('dialog', async dialog => {
-        console.log(`[${sessionId}] Browser dialog detected (${dialog.type()}): "${dialog.message()}". Automatically accepting.`);
-        session.sessionLog.push(`[System] Automatically accepted ${dialog.type()} dialog: "${dialog.message()}"`);
-        await dialog.accept().catch(() => {});
-    });
-
+    // Pre-declare and register session immediately
     const session: AgentSession = { 
-        browser, 
-        page, 
+        browser: null as any, 
+        page: null as any, 
         running: true, 
         micActive: false, 
         geminiWs: undefined, 
@@ -550,56 +499,26 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
     };
     activeSessions.set(sessionId, session);
 
-    const personaPrompt = buildPersonaPrompt(persona);
-    let stepCount = 0;
-    const MAX_STEPS = 20;
-
-    sendEvent(sessionId, 'status', {
-        status: 'running',
-        message: `Initializing Live API session for "${persona.label}"...`,
-    });
-
     try {
-        // ── 2. NAVIGATE TO TARGET ────────────────────────────────────────
-        let finalUrl = targetUrl;
-        if ((targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1')) && process.env.LOCAL_TUNNEL_URL) {
-            console.log(`[${sessionId}] Detected localhost URL. Substituting with tunnel: ${process.env.LOCAL_TUNNEL_URL}`);
-            try {
-                const urlObj = new URL(targetUrl);
-                const tunnelObj = new URL(process.env.LOCAL_TUNNEL_URL);
-                urlObj.protocol = tunnelObj.protocol;
-                urlObj.hostname = tunnelObj.hostname;
-                urlObj.port = tunnelObj.port; // This will strip the original port if the tunnel doesn't have one
-                finalUrl = urlObj.toString();
-                console.log(`[${sessionId}] Rewritten URL: ${finalUrl}`);
-                session.sessionLog.push(`[System] Detected localhost. Rewrote URL to tunnel: ${finalUrl}`);
-            } catch (err) {
-                console.error(`[${sessionId}] Error rewriting localhost URL:`, err);
-            }
-        }
-
-        // Use networkidle for modern SPAs to ensure all initial requests complete
-        await page.goto(finalUrl, { waitUntil: 'networkidle', timeout: 30_000 });
-        await page.waitForTimeout(2000);
+        // ── 1. PARALLEL INITIALIZATION ─────────────────────────────────
+        // Launch browser and connect to Gemini Live API concurrently
+        const browserPromise = chromium.launch({ headless: true });
+        const accessTokenPromise = getAccessToken();
 
         sendEvent(sessionId, 'status', {
             status: 'running',
-            message: `Page loaded. Connecting to Vertex AI Live API...`,
+            message: `Starting browser and connecting to Live API...`,
         });
 
-        // ── 3. OPEN VERTEX AI LIVE API WEBSOCKET ─────────────────────────
-        const accessToken = await getAccessToken();
+        // Setup Gemini connection first to start introduction eagerley
+        const accessToken = await accessTokenPromise;
         const geminiWs = new WebSocket(LIVE_WS_URL, {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
         session.geminiWs = geminiWs;
 
-        await new Promise<void>((resolve, reject) => {
+        const geminiReadyPromise = new Promise<void>((resolve, reject) => {
             geminiWs.on('open', () => {
-                console.log(`[${sessionId}] Gemini Live API WebSocket connected`);
-
-                // Send initial configuration
-                // Use the Vertex AI model format
                 const configMessage = {
                     setup: {
                         model: `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/publishers/google/models/${LIVE_MODEL}`,
@@ -642,7 +561,7 @@ RULES:
 - When the user speaks to you during the session, they are the UX researcher observing you. Respond in character and adjust your behavior based on their instructions.
 - After approximately ${MAX_STEPS} actions, wrap up and call finish_session.
 - You have access to a [SESSION LOG] which records your actions. Refer to it if the user asks "What did you just do?" or similar questions.
-- Begin by observing the page and narrating your first impressions, then take your first action.`
+- Begin by introducing yourself and your goal, then observe the page once it finishes loading.`
                             }]
                         },
                         tools: BROWSER_TOOLS,
@@ -650,23 +569,106 @@ RULES:
                         outputAudioTranscription: {},
                     }
                 };
-
                 geminiWs.send(JSON.stringify(configMessage));
                 resolve();
             });
+            geminiWs.on('error', reject);
+            setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
+        });
 
-            geminiWs.on('error', (err) => {
-                console.error(`[${sessionId}] Gemini Live API WebSocket error:`, err);
-                reject(err);
+        // ── 2. PREPARE BROWSER ──────────────────────────────────────────
+        const browser = await browserPromise;
+        const context = await browser.newContext({
+            viewport: { width: 1280, height: 800 },
+            userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        });
+        const page = await context.newPage();
+        session.browser = browser;
+        session.page = page;
+
+        page.on('console', msg => {
+            if (msg.type() === 'error') consoleErrors.push(msg.text());
+        });
+
+        // Inject visual cursor
+        await page.addInitScript(() => {
+            const cursor = document.createElement('div');
+            cursor.id = 'playwright-visual-cursor';
+            cursor.style.position = 'fixed';
+            cursor.style.zIndex = '999999';
+            cursor.style.width = '20px';
+            cursor.style.height = '20px';
+            cursor.style.borderRadius = '50%';
+            cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.7)';
+            cursor.style.border = '2px solid white';
+            cursor.style.pointerEvents = 'none';
+            cursor.style.transition = 'transform 0.1s ease, background-color 0.2s ease, width 0.2s ease, height 0.2s ease';
+            cursor.style.transform = 'translate(-50%, -50%)';
+            cursor.style.left = '0px';
+            cursor.style.top = '0px';
+            cursor.innerHTML = '<div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 4px; height: 4px; background: white; border-radius: 50%;"></div>';
+            document.body.appendChild(cursor);
+
+            window.addEventListener('mousemove', (e) => {
+                cursor.style.left = `${e.clientX}px`;
+                cursor.style.top = `${e.clientY}px`;
             });
 
-            // Timeout after 10s
-            setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
+            window.addEventListener('mousedown', () => {
+                cursor.style.backgroundColor = 'rgba(255, 215, 0, 0.9)';
+                cursor.style.width = '15px';
+                cursor.style.height = '15px';
+            });
+
+            window.addEventListener('mouseup', () => {
+                cursor.style.backgroundColor = 'rgba(255, 69, 0, 0.7)';
+                cursor.style.width = '20px';
+                cursor.style.height = '20px';
+            });
+        });
+
+        page.on('dialog', async dialog => {
+            console.log(`[${sessionId}] Browser dialog detected (${dialog.type()}): "${dialog.message()}". Automatically accepting.`);
+            session.sessionLog.push(`[System] Automatically accepted ${dialog.type()} dialog: "${dialog.message()}"`);
+            await dialog.accept().catch(() => {});
+        });
+
+        await geminiReadyPromise;
+
+        // ── 3. NAVIGATE IN BACKGROUND ───────────────────────────────────
+        let finalUrl = targetUrl;
+        if ((targetUrl.includes('localhost') || targetUrl.includes('127.0.0.1')) && process.env.LOCAL_TUNNEL_URL) {
+            try {
+                const urlObj = new URL(targetUrl);
+                const tunnelObj = new URL(process.env.LOCAL_TUNNEL_URL);
+                urlObj.protocol = tunnelObj.protocol;
+                urlObj.hostname = tunnelObj.hostname;
+                urlObj.port = tunnelObj.port;
+                finalUrl = urlObj.toString();
+            } catch (err) { }
+        }
+
+        // Trigger introduction speech Turn from Gemini IMMEDIATELY
+        // This makes the agent start talking while the browser is still navigating
+        const introductionMessage = {
+            clientContent: {
+                turns: [{
+                    role: 'user',
+                    parts: [{ text: `The session is starting. Please introduce yourself and your goal for this testing session: "${goal || 'Explore the app'}". The target application is currently loading in the background.` }]
+                }],
+                turnComplete: true
+            }
+        };
+        session.geminiWs?.send(JSON.stringify(introductionMessage));
+
+        // Start navigation while persona is talking
+        page.goto(finalUrl, { waitUntil: 'networkidle', timeout: 30_000 }).catch(err => {
+            console.error(`[${sessionId}] Navigation error:`, err?.message);
         });
 
         sendEvent(sessionId, 'status', {
             status: 'running',
-            message: `Live API connected. Agent is observing the page...`,
+            message: `Persona is introducing themselves. Navigating to "${finalUrl}"...`,
         });
 
         // ── 4. HANDLE INCOMING MESSAGES FROM GEMINI ──────────────────────
@@ -683,27 +685,8 @@ RULES:
                 // ── Setup complete acknowledgment ──
                 if (response.setupComplete) {
                     console.log(`[${sessionId}] Live API setup complete`);
-                    // Send the first screenshot to kick things off
-                    await sendScreenshotToGemini(session, sessionId);
-                    
-                    // Send an initial message to trigger the model to start acting
-                    const initialMessage = {
-                        clientContent: {
-                            turns: [{
-                                role: 'user',
-                                parts: [{ text: 'The page has loaded. Please begin your testing session now.' }]
-                            }],
-                            turnComplete: true
-                        }
-                    };
-                    session.geminiWs?.send(JSON.stringify(initialMessage));
-
-                    // Start periodic screenshot streaming
-                    session.playwright!.screenshotInterval = setInterval(async () => {
-                        if (session.running) {
-                            await sendScreenshotToGemini(session, sessionId);
-                        }
-                    }, 3000);
+                    // We don't send the first screenshot yet because the page might still be loading
+                    // and the persona is currently introducing themselves.
                     return;
                 }
 
@@ -746,6 +729,35 @@ RULES:
                             text: outputTranscription.text,
                             timestamp: Date.now()
                         });
+
+                        // Start the observation loop once the introduction is well underway or finished
+                        // We detect this by checking if it's the first transcription turn
+                        if (!session.playwright!.screenshotInterval && session.running) {
+                             // Wait briefly for navigation to at least start or reach a stable state
+                             try {
+                                 // We don't block the handler, just fire and forget the start of the loop
+                                 console.log(`[${sessionId}] Starting observation loop after introduction start.`);
+                                 
+                                 await sendScreenshotToGemini(session, sessionId);
+                                 session.playwright!.screenshotInterval = setInterval(async () => {
+                                     if (session.running) {
+                                         await sendScreenshotToGemini(session, sessionId);
+                                     }
+                                 }, 3000);
+                                 
+                                 // Instruct to start acting after observations are available
+                                 const startMessage = {
+                                     clientContent: {
+                                         turns: [{
+                                             role: 'user',
+                                             parts: [{ text: 'The browser is now navigating or loaded. You can see the screen. Please begin your testing as soon as the relevant page content appears.' }]
+                                         }],
+                                         turnComplete: true
+                                     }
+                                 };
+                                 session.geminiWs?.send(JSON.stringify(startMessage));
+                             } catch (err) {}
+                        }
                     }
                 }
 
@@ -864,7 +876,9 @@ RULES:
         if (session.geminiWs && session.geminiWs.readyState === WebSocket.OPEN) {
             session.geminiWs.close();
         }
-        await browser.close();
+        if (session.browser) {
+            await session.browser.close().catch(() => {});
+        }
         activeSessions.delete(sessionId);
         sendEvent(sessionId, 'status', { status: 'done', message: 'Session finished.' });
     }

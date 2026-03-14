@@ -317,10 +317,23 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
+          let updatedLabel = node.data.label;
+          
+          // Dynamic Labeling for Personas
+          if (type === 'persona' && finalContent) {
+            // Try to find a name: "Name: John Doe" or just "John Doe" on line 1
+            const firstLine = finalContent.split('\n')[0].trim();
+            const nameMatch = firstLine.match(/^(?:Name:\s*)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i);
+            if (nameMatch && nameMatch[1]) {
+              updatedLabel = nameMatch[1];
+            }
+          }
+
           return {
             ...node,
             data: {
               ...node.data,
+              label: updatedLabel,
               content: finalContent,
             },
           };
@@ -456,7 +469,9 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
             className="text-xs text-cream/45 leading-relaxed mb-3 cursor-text hover:bg-white/5 p-1 -mx-1 rounded transition-colors"
             title="Double-click to edit"
           >
-            {data.content || 'Double click to edit content...'}
+            {data.content 
+              ? (data.content.length > 120 ? data.content.substring(0, 120) + '...' : data.content) 
+              : 'Double click to edit content...'}
           </div>
         )}
 
