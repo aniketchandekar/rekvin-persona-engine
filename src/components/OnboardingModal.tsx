@@ -15,8 +15,8 @@ const CONTENT = {
         color: 'border-node-persona',
         steps: [
             {
-                title: 'Guided Interview',
-                description: 'Talk to Gemini to synthesize a new persona archetype from your product vision.',
+                title: 'Contextual Grounding',
+                description: 'Connect Research, Assumption, and Tension nodes to your Persona to ground them in reality.',
                 icon: <Sparkles size={18} className="text-node-idea" />
             },
             {
