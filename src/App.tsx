@@ -662,7 +662,12 @@ function FreeBuildCanvas() {
           data: { ...n.data, content: "Generating..." }
         } : n));
 
-        const newContent = await geminiService.runWorkflowNode(currentNode.type, currentNode.data.label as string, previousContent);
+        const newContent = await geminiService.runWorkflowNode(
+          currentNode.type, 
+          currentNode.data.label as string, 
+          previousContent,
+          currentNode.data.content as string
+        );
 
         // Update the node with new content
         setNodes(nds => nds.map(n => n.id === currentNode.id ? {
@@ -728,10 +733,10 @@ function FreeBuildCanvas() {
       const targetNode = nodes.find(n => n.id === params.target);
 
       const isSourceEmpty = !(sourceNode?.data?.content as string) || (sourceNode.data.content as string).trim() === '';
-      const isTargetEmpty = !(targetNode?.data?.content as string) || (targetNode.data.content as string).trim() === '';
-
-      if (isSourceEmpty || isTargetEmpty) {
-        setSnackbarMessage("Cannot connect empty nodes. Please add content to both nodes first.");
+      
+      // We allow target to be empty to support "generating" into an empty node
+      if (isSourceEmpty) {
+        setSnackbarMessage("Cannot connect from an empty node. Please add content to the source node first.");
         setTimeout(() => setSnackbarMessage(null), 3500);
         return;
       }

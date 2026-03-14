@@ -145,13 +145,18 @@ export const geminiService = {
   },
 
   // 10. Run Workflow Node
-  async runWorkflowNode(targetNodeType: string, targetNodeLabel: string, previousNodeData: string) {
-    const data = await this._proxyCall('gemini-2.5-pro', `You are an AI assistant in a visual node editor. 
+  async runWorkflowNode(targetNodeType: string, targetNodeLabel: string, previousNodeData: string, currentTargetData: string = '') {
+    const hasCurrentData = currentTargetData && currentTargetData.trim().length > 0 && currentTargetData !== 'Generating...';
+    
+    const prompt = `You are an AI assistant in a visual node editor. 
       The user is running a workflow. 
       The previous node's content is: "${previousNodeData}".
       Your task is to generate the content for the next node, which is a "${targetNodeType}" node labeled "${targetNodeLabel}".
+      ${hasCurrentData ? `IMPORTANT: The user has already provided some initial content/direction for this node: "${currentTargetData}". You MUST incorporate this into your generation, refining or expanding on it rather than ignoring it.` : ''}
       If you need more real-world information to complete this, use the Google Search tool.
-      Keep the generated content concise, insightful, and directly relevant to the previous node's context.`, {
+      Keep the generated content concise, insightful, and directly relevant to the previous node's context.`;
+
+    const data = await this._proxyCall('gemini-2.5-pro', prompt, {
       tools: [{ googleSearch: {} }],
     });
     return data.text;
