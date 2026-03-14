@@ -1,6 +1,6 @@
 import { Handle, Position, useReactFlow, useNodes, useEdges } from '@xyflow/react';
-import { Zap, Trash2, Info, X, Upload, Save, Maximize2, Brain, BarChart3 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Zap, Trash2, Info, X, Upload, Save, Maximize2, Brain, BarChart3, Play, Square, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const nodeStyles = {
@@ -47,6 +47,9 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
   const [editContent, setEditContent] = useState(data.content);
   const [showInfo, setShowInfo] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [isPlayingTrial, setIsPlayingTrial] = useState(false);
+  const [isFetchingTrial, setIsFetchingTrial] = useState(false);
+  const trialAudioRef = useRef<HTMLAudioElement | null>(null);
   const { setNodes, setEdges } = useReactFlow();
   const nodes = useNodes();
   const edges = useEdges();
@@ -202,6 +205,57 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
+
+  const handlePlayTrial = async () => {
+    if (isPlayingTrial) {
+      trialAudioRef.current?.pause();
+      setIsPlayingTrial(false);
+      return;
+    }
+
+    if (isFetchingTrial) return;
+
+    setIsFetchingTrial(true);
+    try {
+      const ttsRes = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+              text: `Hi, I'm ${data.label}. This is what my voice sounds like.`, 
+              voiceName: data.voiceName || 'Puck',
+              prompt: data.content || ''
+          })
+      });
+
+      if (ttsRes.ok) {
+          const resData = await ttsRes.json();
+          if (resData.audioBase64) {
+              const audioUrl = `data:audio/mpeg;base64,${resData.audioBase64}`;
+              if (trialAudioRef.current) {
+                trialAudioRef.current.pause();
+              }
+              const audio = new Audio(audioUrl);
+              trialAudioRef.current = audio;
+              audio.onplay = () => setIsPlayingTrial(true);
+              audio.onended = () => setIsPlayingTrial(false);
+              audio.onerror = () => setIsPlayingTrial(false);
+              audio.play();
+          }
+      }
+    } catch (error) {
+        console.error('Trial audio error:', error);
+    } finally {
+        setIsFetchingTrial(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (trialAudioRef.current) {
+        trialAudioRef.current.pause();
+      }
+    };
+  }, []);
 
   const handleSummarize = async () => {
     if (isSummarizing) return;
@@ -424,33 +478,48 @@ export function BaseNode({ data, type, id }: { data: any, type: keyof typeof nod
               {type === 'persona' && (
                 <div className="flex items-center gap-2 text-[11px] text-cream/40 bg-ink-3 px-2.5 py-1.5 rounded-md border border-node-persona/20">
                   <span className="font-mono text-[10px] shrink-0 pt-px text-node-persona">VOICE</span>
-                  <select 
-                    value={data.voiceName || 'Puck'}
-                    onChange={(e) => {
-                      setNodes((nds) =>
-                        nds.map((node) => {
-                          if (node.id === id) {
-                            return {
-                              ...node,
-                              data: { ...node.data, voiceName: e.target.value },
-                            };
-                          }
-                          return node;
-                        })
-                      );
-                    }}
-                    className="bg-transparent text-cream/60 outline-none cursor-pointer hover:text-cream transition-colors w-full"
-                  >
-                    {[
-                      'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 
-                      'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 
-                      'Gacrux', 'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Pulcherrima', 
-                      'Puck', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 
-                      'Umbriel', 'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'
-                    ].sort().map(v => (
-                      <option key={v} value={v} className="bg-ink-2">{v}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2 w-full">
+                    <select 
+                      value={data.voiceName || 'Puck'}
+                      onChange={(e) => {
+                        setNodes((nds) =>
+                          nds.map((node) => {
+                            if (node.id === id) {
+                              return {
+                                ...node,
+                                data: { ...node.data, voiceName: e.target.value },
+                              };
+                            }
+                            return node;
+                          })
+                        );
+                      }}
+                      className="bg-transparent text-cream/60 outline-none cursor-pointer hover:text-cream transition-colors flex-1"
+                    >
+                      {[
+                        'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 
+                        'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 
+                        'Gacrux', 'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Pulcherrima', 
+                        'Puck', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 
+                        'Umbriel', 'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'
+                      ].sort().map(v => (
+                        <option key={v} value={v} className="bg-ink-2">{v}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handlePlayTrial}
+                      className="p-1 rounded hover:bg-white/10 text-node-persona transition-all"
+                      title="Play Trial"
+                    >
+                      {isFetchingTrial ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : isPlayingTrial ? (
+                        <Square size={12} fill="currentColor" />
+                      ) : (
+                        <Play size={12} fill="currentColor" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               )}
             </>

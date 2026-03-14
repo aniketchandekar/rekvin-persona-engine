@@ -1,6 +1,6 @@
 # Rekvin
 
-Rekvin is an AI-powered UX research platform that transforms static personas into autonomous, multimodal agents. Build personas through Socratic interviews, chat with them using native TTS, and deploy them to test your web applications autonomously.
+Rekvin is an AI-powered UX research platform that transforms static personas into autonomous, multimodal agents. Build personas through a high-power node-based canvas, chat with them using native TTS, and deploy them to test your web applications autonomously.
  
  ![Architecture Diagram](Architecture%20Diagram.png)
  
@@ -8,9 +8,10 @@ Rekvin is an AI-powered UX research platform that transforms static personas int
  
  ## ✨ Key Features
 
-- **Visual Persona Builder:** Create deep user archetypes using a node-based canvas and AI-guided Socratic interviews.
+- **Visual Persona Builder:** Create deep user archetypes using a high-power node-based canvas. Connect research findings, assumptions, and tension points to ground your synthetic users.
 - **Multimodal Live Agent:** Watch AI agents navigate your site in real-time using the **Vertex AI Gemini Multimodal Live API**. The agent "sees" the UI at 1fps and immediately begins testing autonomously.
 - **Interactive Conversation Mode:** Redirect the agent's behavior or ask for its reasoning mid-session. Using your microphone, you can intervene and have a real-time voice conversation with the synthetic agent.
+- **Voice Trial:** Audition persona voices directly on the canvas. Every persona node features a "Voice Trial" button to hear a character-consistent greeting before deploying them to a test.
 - **Post-Session Agent Chat:** Debrief with the persona after a test session using the "Talk to Agent" button. This mode provides the agent with full session context, allowing for intelligent post-test reflections.
 - **Premium Gemini TTS:** All narrations and chat responses are powered by character-consistent **Gemini TTS** voices with descriptions used as style prompts for high-fidelity audio.
 - **Gender-Aware Voice Assignment:** Rekvin automatically detects the persona's gender from their name and description, assigning a corresponding male or female voice during creation.

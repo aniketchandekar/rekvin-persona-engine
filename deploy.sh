@@ -30,6 +30,6 @@ $GCLOUD_PATH run deploy $SERVICE_NAME \
   --session-affinity \
   --project $PROJECT_ID \
   --memory 1Gi \
-  --set-env-vars="GEMINI_API_KEY=$GEMINI_API_KEY,GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=$REGION"
+  --set-env-vars="GEMINI_API_KEY=$GEMINI_API_KEY,GCP_PROJECT_ID=$PROJECT_ID,GCP_LOCATION=$REGION,LOCAL_TUNNEL_URL=$LOCAL_TUNNEL_URL"
 
 echo "✅ Deployment complete!"

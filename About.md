@@ -25,6 +25,7 @@ Rekvin enables a uniquely collaborative research flow via the Multimodal Live AP
 - **Premium Gemini TTS Integration:** Migrated from browser-native speech to the **Gemini TTS** API (`/api/tts`). All synthetic speech uses premium Gemini voices, with the persona's description passed as a **Style Prompt** to ensure the voice matches the character's personality and tone.
 - **Gender-Aware Voice Mapping:** The system automatically categorizes personas based on their name and description using an AI classifier. It then assigns a corresponding male (`Charon`), female (`Aoede`), or neutral (`Puck`) premium voice during the initial creation phase or workflow execution.
 - **Post-Session Debriefing Flow:** After a test concludes, the "Talk to Agent" mode initializes the chat by injecting the internal **Session Log** (including the agent's hidden thoughts, manual narrations, and metric results). This grounds the agent's responses, allowing it to explain its reasoning post-hoc with perfect recall of the session.
+- **On-Canvas Voice Trial:** Users can audition persona voices directly from the node palette. Every Persona node includes a "Voice Trial" button that triggers a character-consistent greeting sample using the Gemini TTS API, allowing for rapid iteration of persona personality during the design phase.
 
 ### 3. Visual Metrics Hub & Behavioral Analysis
 The Metrics Hub transforms raw session recordings into actionable, quantitative data.
@@ -66,6 +67,6 @@ Rekvin is deployed on **Google Cloud Run** for high scalability and low latency.
 
 ## 🧠 The "Persona" Node Structure
 A Persona in Rekvin is more than just a description. It's a structured entity including:
-- **Core Traits:** Captured via Socratic interview.
+- **Core Insights:** Synthesized from connected Research, Assumption, and Tension nodes.
 - **Behavioral Fields:** Extracted metadata like "Tech Literacy", "Patience", and "Primary Device".
 - **Quality Score:** An AI-generated metric indicating the depth and validity of the persona based on its supporting nodes (Ideas, Assumptions, Research).
