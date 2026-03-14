@@ -113,6 +113,7 @@ interface AgentSession {
         screenshotInterval: ReturnType<typeof setInterval> | null;
     };
     mousePos: { x: number; y: number };
+    introComplete: boolean;
 }
 const activeSessions = new Map<string, AgentSession>();
 
@@ -495,7 +496,8 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
         geminiWs: undefined, 
         sessionLog: [],
         playwright: { screenshotInterval: null },
-        mousePos: { x: 0, y: 0 }
+        mousePos: { x: 0, y: 0 },
+        introComplete: false
     };
     activeSessions.set(sessionId, session);
 
@@ -729,34 +731,37 @@ RULES:
                             text: outputTranscription.text,
                             timestamp: Date.now()
                         });
+                    }
 
-                        // Start the observation loop once the introduction is well underway or finished
-                        // We detect this by checking if it's the first transcription turn
-                        if (!session.playwright!.screenshotInterval && session.running) {
-                             // Wait briefly for navigation to at least start or reach a stable state
-                             try {
-                                 // We don't block the handler, just fire and forget the start of the loop
-                                 console.log(`[${sessionId}] Starting observation loop after introduction start.`);
-                                 
-                                 await sendScreenshotToGemini(session, sessionId);
-                                 session.playwright!.screenshotInterval = setInterval(async () => {
-                                     if (session.running) {
-                                         await sendScreenshotToGemini(session, sessionId);
-                                     }
-                                 }, 3000);
-                                 
-                                 // Instruct to start acting after observations are available
-                                 const startMessage = {
-                                     clientContent: {
-                                         turns: [{
-                                             role: 'user',
-                                             parts: [{ text: 'The browser is now navigating or loaded. You can see the screen. Please begin your testing as soon as the relevant page content appears.' }]
-                                         }],
-                                         turnComplete: true
-                                     }
-                                 };
-                                 session.geminiWs?.send(JSON.stringify(startMessage));
-                             } catch (err) {}
+                    // ── Turn complete handling (Sequence control) ──
+                    if (sc.turnComplete || sc.turn_complete) {
+                        if (!session.introComplete && session.running) {
+                            session.introComplete = true;
+                            console.log(`[${sessionId}] Introduction turn complete. Starting observation loop...`);
+
+                            // Start the observation loop now that the intro is finished
+                            try {
+                                await sendScreenshotToGemini(session, sessionId);
+                                session.playwright!.screenshotInterval = setInterval(async () => {
+                                    if (session.running) {
+                                        await sendScreenshotToGemini(session, sessionId);
+                                    }
+                                }, 3000);
+
+                                // Instruct to start acting
+                                const startMessage = {
+                                    clientContent: {
+                                        turns: [{
+                                            role: 'user',
+                                            parts: [{ text: 'The introduction is complete. You can now see the screen. Please begin your testing.' }]
+                                        }],
+                                        turnComplete: true
+                                    }
+                                };
+                                session.geminiWs?.send(JSON.stringify(startMessage));
+                            } catch (err) {
+                                console.error(`[${sessionId}] Error starting loop after intro:`, err);
+                            }
                         }
                     }
                 }
