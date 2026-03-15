@@ -217,8 +217,8 @@ export function MetricsHub({ savedSessions }: { savedSessions: SavedSession[] })
             const metricNode = isSourceMetric ? sourceNode : targetNode;
             await analyzeMetric(geminiService, sessionNode.data, metricNode.data, metricNode.id);
 
-            // Add a substantial delay between requests to stay under 15 RPM free tier limits
-            await new Promise(resolve => setTimeout(resolve, 4500));
+            // Rate limit delay (reduced from 4.5s to 2s for better UX, still safe for most accounts)
+            await new Promise(resolve => setTimeout(resolve, 2000));
           } else {
             console.error(`[Workflow Error] Invalid edge connection between '${sourceNode.type}' and '${targetNode.type}'. Please connect a Session node to a Metric node.`, { edge, sourceNode, targetNode });
           }
@@ -267,11 +267,26 @@ export function MetricsHub({ savedSessions }: { savedSessions: SavedSession[] })
       const metricNodes = nodes.filter(n => n.type === 'metric' && n.data?.result && !String(n.data.result).startsWith('Analyzing'));
 
       const sessionData = sessionNodes.map(n => n.data);
-      const metricResults = metricNodes.map(n => ({
-        label: n.data.label,
-        type: n.data.type,
-        result: typeof n.data.result === 'string' ? JSON.parse(n.data.result) : n.data.result
-      }));
+      const metricResults = metricNodes.map(n => {
+        let parsedResult = n.data.result;
+        if (typeof n.data.result === 'string') {
+          try {
+            // Check if it's already an 'Analyzing' or 'Error' state
+            if (n.data.result.startsWith('Analyzing') || n.data.result.startsWith('Error')) {
+              return null;
+            }
+            parsedResult = JSON.parse(n.data.result);
+          } catch (e) {
+            console.warn(`[Report] Failed to parse result for node ${n.id}:`, n.data.result);
+            return null;
+          }
+        }
+        return {
+          label: n.data.label,
+          type: n.data.type,
+          result: parsedResult
+        };
+      }).filter(Boolean); // Remote invalid or non-parsed results
 
       const report = await geminiService.generateDiagnosticReport(sessionData, metricResults);
       setDiagnosticReport(report);

@@ -46,10 +46,11 @@ app.post('/api/gemini/proxy', async (req, res) => {
         }
 
         const body: any = { contents: formattedContents };
-        if (config?.responseMimeType || config?.responseSchema) {
+        if (config?.responseMimeType || config?.responseSchema || config?.maxOutputTokens) {
             body.generationConfig = {};
             if (config.responseMimeType) body.generationConfig.responseMimeType = config.responseMimeType;
             if (config.responseSchema) body.generationConfig.responseSchema = config.responseSchema;
+            if (config.maxOutputTokens) body.generationConfig.maxOutputTokens = config.maxOutputTokens;
         }
         if (config?.systemInstruction) {
             body.systemInstruction = config.systemInstruction;
@@ -58,6 +59,14 @@ app.post('/api/gemini/proxy', async (req, res) => {
             body.tools = config.tools;
         }
 
+        console.log(`[Proxy] Calling Gemini: ${model}`, JSON.stringify({ 
+            parts: formattedContents?.[0]?.parts?.length,
+            configKeys: Object.keys(config || {})
+        }));
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
         const apiRes = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -65,7 +74,11 @@ app.post('/api/gemini/proxy', async (req, res) => {
                 'Authorization': `Bearer ${accessToken}`,
             },
             body: JSON.stringify(body),
+            signal: controller.signal
         });
+        clearTimeout(timeoutId);
+
+        console.log(`[Proxy] Gemini Response Status: ${apiRes.status}`);
 
         if (!apiRes.ok) {
             const errText = await apiRes.text();

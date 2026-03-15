@@ -202,18 +202,15 @@ export const geminiService = {
     
     Metric Results:
     ${JSON.stringify(metricResults, null, 2)}
-    
-    Return ONLY a JSON object with this schema:
-    {
       "personaFit": {
         "score": "A score out of 5 (e.g., '3/5')",
-        "assessment": "A focused 2-3 sentence assessment. Analyze if the product friction encountered was due to the persona's inherent constraints (low patience, low cognitive load, specific vocab) or if it's a general usability flaw. Provide a verdict on whether this is the right persona to be testing with, or if they are an extreme edge-case."
+        "assessment": "Strictly 2 sentences. Analyze if the product friction was due to persona constraints or general usability flaws. Use Max 40 words."
       },
       "productFixes": [
         {
           "priority": "HIGH, MED, or LOW",
-          "issue": "A concise 1-sentence description of the UX issue based on the metrics (e.g. 'Step 3 Form Abandonment', 'Vocabulary mismatch on Pricing')",
-          "recommendation": "A highly specific, actionable UX fix (1-2 sentences)."
+          "issue": "Concise 1-sentence description (Max 15 words) of the UX issue.",
+          "recommendation": "Highly specific, actionable fix. Strictly 1-2 short sentences (Max 30 words)."
         }
       ]
     }`;
@@ -240,13 +237,14 @@ export const geminiService = {
           }
         }
       }
-    }, 'gemini-2.5-flash');
+    }, 'gemini-2.5-pro', 800);
   },
 
-  async generateJSON(prompt: string, schema: any, modelStr: string = 'gemini-2.5-pro') {
+  async generateJSON(prompt: string, schema: any, modelStr: string = 'gemini-2.5-pro', maxTokens?: number) {
     const data = await this._proxyCall(modelStr, prompt, {
       responseMimeType: 'application/json',
       responseSchema: schema,
+      maxOutputTokens: maxTokens
     });
     try {
       return JSON.parse(data.text || '{}');
