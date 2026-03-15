@@ -283,6 +283,7 @@ export function usePlaywrightAgent() {
         setStatusMessage('Starting agent...');
         setUserTranscript('');
         setAgentTranscript('');
+        setTranscripts([]);
         setPersonaVoice(persona.data?.voiceName || persona.voiceName || 'Puck');
         setPersonaContent(persona.data?.content || persona.content || '');
 
@@ -333,10 +334,7 @@ export function usePlaywrightAgent() {
         evtSource.addEventListener('thought', (e) => {
             const data: AgentThought = JSON.parse((e as MessageEvent).data);
             setThoughts(prev => [...prev, data]);
-            // Auto-read the thought as it appears
-            if (data.thought) {
-                speakText(data.thought);
-            }
+            // Removed speakText(data.thought) to ensure voice consistency with Live API PCM stream
         });
 
         evtSource.addEventListener('action_result', (e) => {
@@ -408,11 +406,12 @@ export function usePlaywrightAgent() {
                 }
             };
 
-            if (text && !hasPcmAudioRef.current) {
-                // Defer showing transcript until TTS actually starts speaking (Fallback only)
+            if (text && !hasPcmAudioRef.current && !isLiveApiRef.current) {
+                // Defer showing transcript until TTS actually starts speaking (Fallback for non-Live mode)
                 speakText(text, () => handleAgentTranscript(text));
             } else {
-                // If PCM audio is active, show transcript immediately 
+                // For Live API (PCM) or if audio already started, show transcript immediately
+                // The Live API handles its own voice narration.
                 handleAgentTranscript(text);
             }
         });
@@ -510,6 +509,7 @@ export function usePlaywrightAgent() {
         setError(null);
         setUserTranscript('');
         setAgentTranscript('');
+        setTranscripts([]);
         sessionIdRef.current = null;
     }, [stopMic, stopTts]);
 

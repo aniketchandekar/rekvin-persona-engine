@@ -334,15 +334,17 @@ app.post('/api/test/audio', (req, res) => {
     }
 
     // Forward user audio to Gemini Live API
-    const audioMessage = {
-        realtimeInput: {
-            audio: {
-                data: audioData, // base64 PCM 16kHz
-                mimeType: 'audio/pcm;rate=16000'
+    if (session.geminiWs?.readyState === WebSocket.OPEN) {
+        const audioMessage = {
+            realtimeInput: {
+                mediaChunks: [{
+                    data: audioData, // base64 PCM 16kHz
+                    mimeType: 'audio/pcm;rate=16000'
+                }]
             }
-        }
-    };
-    session.geminiWs.send(JSON.stringify(audioMessage));
+        };
+        session.geminiWs.send(JSON.stringify(audioMessage));
+    }
     res.json({ ok: true });
 });
 
@@ -356,23 +358,20 @@ app.post('/api/test/mic-state', (req, res) => {
     console.log(`[${sessionId}] Mic state changed to: ${active ? 'ACTIVE (Conversation Mode)' : 'INACTIVE (Testing Mode)'}`);
 
     if (session.geminiWs && session.geminiWs.readyState === WebSocket.OPEN) {
-        let msg = "";
-        if (active) {
-            const history = session.sessionLog.length > 0 
-                ? session.sessionLog.join('\n')
-                : "No actions taken yet.";
-                
-            msg = `[SYSTEM] User has turned on their microphone. Suspend all autonomous testing actions and tools.
+        const history = session.sessionLog.length > 0 
+            ? session.sessionLog.join('\n')
+            : "No actions taken yet.";
+            
+        const msg = active
+            ? `[SYSTEM] User has turned on their microphone. Suspend all autonomous testing actions and tools.
 Switch to CONVERSATION MODE: listen to the user, respond to their questions in character, and wait for their input. 
 Do not click or type anything until the mic is turned off.
 
 SESSION LOG SO FAR:
 ${history}
 
-Use this log to answer questions about what you have done, what failed, or what you observe.`;
-        } else {
-            msg = "[SYSTEM] User has turned off their microphone. Switch back to TESTING MODE: resume autonomous testing and navigation of the application using your tools. Follow the previous goal if provided.";
-        }
+Use this log to answer questions about what you have done, what failed, or what you observe.`
+            : "[SYSTEM] User has turned off their microphone. Switch back to TESTING MODE: resume autonomous testing and navigation of the application using your tools. Follow the previous goal if provided.";
             
         session.geminiWs.send(JSON.stringify({
             clientContent: {
@@ -520,6 +519,11 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
         session.geminiWs = geminiWs;
 
         const geminiReadyPromise = new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                geminiWs.removeAllListeners('message');
+                reject(new Error('WebSocket setup confirmation timeout'));
+            }, 10000);
+
             geminiWs.on('open', () => {
                 const configMessage = {
                     setup: {
@@ -533,10 +537,6 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
                                     }
                                 }
                             }
-                        },
-                        contextWindowCompression: {
-                            triggerTokens: 25600,
-                            slidingWindow: { targetTokens: 12800 }
                         },
                         systemInstruction: {
                             parts: [{
@@ -554,7 +554,7 @@ RULES:
 - CRITICAL: Only interact with elements you VISIBLY see on the screen. Describe the actual text labels or visual landmarks you see before acting.
 - DO NOT assume standard links like "Products", "Pricing", or "About" exist if they are not clearly labeled.
 - You ACT on the app by calling the provided browser tools.
-- Narrate your thoughts out loud in first person as the persona before each action.
+- CRITICAL: You must NARRATE your thoughts out loud in first person as the persona before and during each action. Your voice is being streamed to the user, so speak clearly and stay in character.
 - If a tool fails (e.g. timeout), DO NOT simply retry the same action. Observe the page again to see if the element exists or if the page state changed.
 - If the persona has low tech literacy, hesitate and express confusion at complex UI.
 - If the persona has low patience, abandon after 2-3 frustrations.
@@ -566,16 +566,39 @@ RULES:
 - Begin by introducing yourself and your goal, then observe the page once it finishes loading.`
                             }]
                         },
-                        tools: BROWSER_TOOLS,
-                        inputAudioTranscription: {},
-                        outputAudioTranscription: {},
+                        tools: BROWSER_TOOLS
                     }
                 };
+                console.log(`[${sessionId}] Sending setup to Gemini Live API...`);
                 geminiWs.send(JSON.stringify(configMessage));
-                resolve();
             });
-            geminiWs.on('error', reject);
-            setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
+
+            geminiWs.on('message', (data) => {
+                try {
+                    const response = JSON.parse(data.toString());
+                    console.log(`[${sessionId}] Received from Gemini during setup:`, Object.keys(response));
+                    if (response.setupComplete || response.setup_complete) {
+                        console.log(`[${sessionId}] Gemini setup complete!`);
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                } catch (e) {
+                    console.error('Error parsing setup message:', e);
+                }
+            });
+
+            geminiWs.on('error', (err) => {
+                console.error(`[${sessionId}] Gemini WebSocket Error:`, err);
+                clearTimeout(timeout);
+                reject(err);
+            });
+
+            geminiWs.on('close', (code, reason) => {
+                console.warn(`[${sessionId}] Gemini WebSocket Closed during setup: code=${code}, reason=${reason.toString()}`);
+                clearTimeout(timeout);
+                session.running = false;
+                reject(new Error(`WebSocket closed during setup: ${reason.toString()}`));
+            });
         });
 
         // ── 2. PREPARE BROWSER ──────────────────────────────────────────
@@ -661,7 +684,9 @@ RULES:
                 turnComplete: true
             }
         };
-        session.geminiWs?.send(JSON.stringify(introductionMessage));
+        if (session.geminiWs?.readyState === WebSocket.OPEN) {
+            session.geminiWs.send(JSON.stringify(introductionMessage));
+        }
 
         // Start navigation while persona is talking
         page.goto(finalUrl, { waitUntil: 'networkidle', timeout: 30_000 }).catch(err => {
@@ -679,13 +704,18 @@ RULES:
 
             try {
                 const response = JSON.parse(rawData.toString());
+                
+                // Logging for debugging (truncated for large messages)
+                if (!response.server_content?.model_turn?.parts?.some((p: any) => p.inline_data)) {
+                    console.log(`[${sessionId}] Gemini Response:`, JSON.stringify(response).slice(0, 500));
+                }
 
                 if (response.error) {
                     console.error(`[${sessionId}] Vertex AI WS Error received:`, JSON.stringify(response.error, null, 2));
                 }
 
                 // ── Setup complete acknowledgment ──
-                if (response.setupComplete) {
+                if (response.setup_complete || response.setupComplete) {
                     console.log(`[${sessionId}] Live API setup complete`);
                     // We don't send the first screenshot yet because the page might still be loading
                     // and the persona is currently introducing themselves.
@@ -753,17 +783,19 @@ RULES:
                                     }
                                 }, 3000);
 
-                                // Instruct to start acting
-                                const startMessage = {
-                                    clientContent: {
-                                        turns: [{
-                                            role: 'user',
-                                            parts: [{ text: 'The introduction is complete. You can now see the screen. Please begin your testing.' }]
-                                        }],
-                                        turnComplete: true
-                                    }
-                                };
-                                session.geminiWs?.send(JSON.stringify(startMessage));
+                            // Instruct to start acting
+                            const startMessage = {
+                                clientContent: {
+                                    turns: [{
+                                        role: 'user',
+                                        parts: [{ text: 'The introduction is complete. You can now see the screen. Please begin your testing.' }]
+                                    }],
+                                    turnComplete: true
+                                }
+                            };
+                            if (session.geminiWs?.readyState === WebSocket.OPEN) {
+                                session.geminiWs.send(JSON.stringify(startMessage));
+                            }
                             } catch (err) {
                                 console.error(`[${sessionId}] Error starting loop after intro:`, err);
                             }
@@ -772,14 +804,15 @@ RULES:
                 }
 
                 // ── Tool calls from Gemini ──
-                if (response.toolCall) {
+                if (response.tool_call || response.toolCall) {
                     if (session.micActive) {
                         console.log(`[${sessionId}] Tool call received but suppressed due to active microphone (Conversation Mode)`);
                         return;
                     }
 
-                    const functionCalls = response.toolCall.functionCalls || [];
-                    const functionResponses: any[] = [];
+                    const tc = response.tool_call || response.toolCall;
+                    const functionCalls = tc.function_calls || tc.functionCalls || [];
+                    const functionResponses = [];
 
                     for (const fc of functionCalls) {
                         stepCount++;
@@ -915,10 +948,10 @@ async function sendScreenshotToGemini(session: AgentSession, sessionId: string) 
         // Send to Gemini Live API as video frame
         const videoMessage = {
             realtimeInput: {
-                video: {
+                mediaChunks: [{
                     data: base64Screenshot,
                     mimeType: 'image/jpeg'
-                }
+                }]
             }
         };
         session.geminiWs.send(JSON.stringify(videoMessage));

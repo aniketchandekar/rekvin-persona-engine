@@ -10,8 +10,13 @@ interface PersonaChatModalProps {
 }
 
 export function PersonaChatModal({ persona, onClose, sessionData }: PersonaChatModalProps) {
+    // Debug logging
+    useEffect(() => {
+        console.log('[PersonaChatModal] Mounted with:', { persona, sessionData });
+    }, []);
+
     const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([
-        { role: 'model', text: `Hi! I'm ${persona.data.label}. What would you like to ask me?` }
+        { role: 'model', text: `Hi! I'm ${persona?.data?.label || 'Unknown'}. What would you like to ask me?` }
     ]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -33,6 +38,11 @@ export function PersonaChatModal({ persona, onClose, sessionData }: PersonaChatM
 
     useEffect(() => {
         const initChat = async () => {
+            if (!persona?.data) {
+                console.error('[PersonaChatModal] Invalid persona data:', persona);
+                return;
+            }
+
             let contextBlocks = '';
             if (sessionData) {
                 contextBlocks += `\n\n--- RECENT TEST SESSION CONTEXT ---\n`;
@@ -55,17 +65,18 @@ export function PersonaChatModal({ persona, onClose, sessionData }: PersonaChatM
             }
 
             const systemInstruction = `You are roleplaying as the following user persona:
-Name/Label: ${persona.data.label}
-Description: ${persona.data.content}
+Name/Label: ${persona.data.label || 'Unknown'}
+Description: ${persona.data.content || 'No description provided'}
 Traits: ${Object.entries(persona.data.fields || {})
                     .map(([k, v]) => `${k}: ${v}`)
-                    .join(', ')}
+                    .join(', ') || 'None specified'}
 
 Rules:
 1. Always stay in character. Speak in the first person ("I").
 2. Your tone should match the traits described.
 3. Keep responses relatively concise (2-4 sentences max).${contextBlocks}`;
 
+            console.log('[PersonaChatModal] Initializing chat with system instruction:', systemInstruction);
             const session = geminiService.createChatbot(systemInstruction, 'gemini-2.5-flash');
             setChatSession(session);
         };
@@ -105,7 +116,7 @@ Rules:
                 recognitionRef.current.stop();
             }
         };
-    }, [persona]);
+    }, [persona, sessionData]);
 
     const toggleRecording = () => {
         if (isRecording) {
@@ -138,14 +149,14 @@ Rules:
             setMessages(prev => [...prev, { role: 'model', text: responseText }]);
 
             // Fetch TTS
-            const voiceName = persona.data.voiceName || 'Puck';
+            const voiceName = persona?.data?.voiceName || persona?.voiceName || 'Puck';
             const ttsRes = await fetch('/api/tts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     text: responseText, 
                     voiceName,
-                    prompt: persona.data.content || ''
+                    prompt: persona?.data?.content || persona?.content || ''
                 })
             });
 
@@ -198,13 +209,13 @@ Rules:
                 <div className="flex items-center justify-between px-6 py-4 border-b border-rule-2 bg-ink-3">
                     <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-full bg-node-persona/20 flex items-center justify-center relative">
-                            <span className="text-node-persona font-display text-xl">{persona.data.label.charAt(0)}</span>
+                            <span className="text-node-persona font-display text-xl">{persona?.data?.label?.charAt(0) || '?'}</span>
                             {isPlaying && (
                                 <span className="absolute -bottom-1 -right-1 w-3 h-3 bg-node-idea rounded-full animate-pulse border-2 border-ink-3"></span>
                             )}
                         </div>
                         <div>
-                            <h2 className="text-cream font-display text-lg tracking-wide">{persona.data.label}</h2>
+                            <h2 className="text-cream font-display text-lg tracking-wide">{persona?.data?.label || 'Unknown Persona'}</h2>
                             <div className="text-xs text-cream-dim flex items-center gap-2">
                                 <span className="w-1.5 h-1.5 rounded-full bg-node-idea/50"></span>
                                 Live Audio Session

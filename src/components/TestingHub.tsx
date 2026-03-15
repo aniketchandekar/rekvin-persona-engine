@@ -552,7 +552,18 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                       <div className="px-4 pb-3 flex items-center gap-2">
                         {session.personaContent && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); onOpenChat({ data: { label: session.personaLabel, content: session.personaContent } }, session); }}
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              const personaForChat = {
+                                data: {
+                                  label: session.personaLabel,
+                                  content: session.personaContent,
+                                  fields: {},
+                                  voiceName: session.voiceName || 'Puck',
+                                }
+                              };
+                              onOpenChat(personaForChat, session); 
+                            }}
                             className="p-1.5 rounded-lg bg-ink-3 border border-rule-2 hover:bg-node-idea/20 hover:text-node-idea hover:border-node-idea/50 text-cream-dim transition-all"
                             title="Chat with Persona"
                           >
@@ -953,13 +964,23 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                           <>
                             <button 
                               onClick={() => {
+                                if (!activePersona) return;
                                 const sessionData = {
                                   mode: testMode,
                                   agentThoughts: testMode === 'playwright' ? [...playwright.thoughts] : undefined,
                                   narrations: testMode === 'vision' ? [...narrations] : undefined,
                                   analysis: testMode === 'playwright' ? playwright.analysis : analysisResult,
                                 };
-                                onOpenChat(activePersona, sessionData);
+                                // Ensure persona has the correct structure
+                                const personaForChat = {
+                                  data: {
+                                    label: activePersona.data?.label || activePersona.label || 'Agent',
+                                    content: activePersona.data?.content || activePersona.content || '',
+                                    fields: activePersona.data?.fields || activePersona.fields || {},
+                                    voiceName: activePersona.data?.voiceName || activePersona.voiceName || 'Puck',
+                                  }
+                                };
+                                onOpenChat(personaForChat, sessionData);
                               }}
                               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-node-idea/20 text-node-idea hover:bg-node-idea/30 transition-colors text-xs font-medium"
                               title="Ask the agent questions about this session"
