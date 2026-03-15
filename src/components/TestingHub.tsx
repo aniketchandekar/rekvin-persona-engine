@@ -374,15 +374,22 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
         return;
     }
 
+    // Don't play if mic is active in playwright mode
+    if (testMode === 'playwright' && playwright.isMicActive) {
+        console.log('[TestingHub] Skipping thought audio - mic is active');
+        return;
+    }
+
     setPlayingThoughtId(id);
+    console.log('[TestingHub] Playing thought audio with voice:', voiceName);
     try {
         const res = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 text, 
-                voiceName,
-                prompt: prompt || (activePersona?.data.content || activePersona?.content || '')
+                voiceName: voiceName || 'Puck',
+                prompt: prompt || (activePersona?.data?.content || activePersona?.content || '')
             })
         });
         if (!res.ok) throw new Error('TTS failed');
@@ -1153,9 +1160,17 @@ export function TestingHub({ savedPersonas, savedSessions, setSavedSessions, act
                                 ))
                               ) : (
                                 <div className="flex flex-col items-center justify-center p-8 text-center h-full opacity-40">
-                                  <Mic size={32} className="mb-4 text-cream-dim" />
+                                  <Mic size={32} className={`mb-4 ${playwright.isMicActive ? 'text-node-journey animate-pulse' : 'text-cream-dim'}`} />
                                   <p className="text-xs text-cream-dim leading-relaxed">
-                                    No transcription yet. <br/> Turn on microphone to chat.
+                                    {playwright.isMicActive ? (
+                                      <>
+                                        Listening... <br/> Start speaking to see transcription.
+                                      </>
+                                    ) : (
+                                      <>
+                                        No transcription yet. <br/> Turn on microphone to chat.
+                                      </>
+                                    )}
                                   </p>
                                 </div>
                               )}

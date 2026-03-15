@@ -33,14 +33,21 @@ export function usePlaywrightAgent() {
     const isTtsPlayingRef = useRef<boolean>(false);
     const isLiveApiRef = useRef<boolean>(false);
     const currentTtsAudioRef = useRef<HTMLAudioElement | null>(null);
+    const isMicActiveRef = useRef<boolean>(false);
 
     // Schedules a raw PCM base64 chunk (24kHz, 16-bit, mono) into a gapless audio stream
     const schedulePcmChunk = useCallback((base64: string) => {
+        
         try {
             if (!outputAudioCtxRef.current) {
                 outputAudioCtxRef.current = new AudioContext({ sampleRate: 24000 });
             }
             const ctx = outputAudioCtxRef.current;
+            
+            // Don't schedule if context is suspended
+            if (ctx.state === 'suspended') {
+                return;
+            }
 
             // Decode base64 -> binary -> Int16Array
             const binaryStr = atob(base64);
@@ -90,6 +97,7 @@ export function usePlaywrightAgent() {
     }, []);
 
     const playNextTts = useCallback(() => {
+        
         if (isTtsPlayingRef.current || ttsAudioQueueRef.current.length === 0) {
             setIsSpeaking(isTtsPlayingRef.current);
             return;
@@ -223,7 +231,7 @@ export function usePlaywrightAgent() {
             source.connect(processor);
             processor.connect(audioCtx.destination);
 
-            setIsMicActive(true);
+            // isMicActive is already managed by toggleMic, don't set it here
         } catch (err: any) {
             console.error('Mic access denied:', err);
             setError('Microphone access is required for voice intervention.');
@@ -244,35 +252,45 @@ export function usePlaywrightAgent() {
             micStreamRef.current = null;
         }
         setIsMicActive(false);
+        isMicActiveRef.current = false;
     }, []);
 
     const toggleMic = useCallback(async () => {
         const newState = !isMicActive;
         setIsMicActive(newState);
+        isMicActiveRef.current = newState;
         
+        if (!sessionIdRef.current) return;
+
         if (newState) {
+            // MIC ON: start capturing audio, notify backend to suppress tool calls
             await startMic();
         } else {
+            // MIC OFF: stop mic, notify backend to resume testing
             stopMic();
         }
-        
-        // Notify backend of mic state change to switch between testing/conversation modes
-        if (sessionIdRef.current) {
-            try {
-                await fetch('/api/test/mic-state', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId: sessionIdRef.current, active: newState })
-                });
-            } catch (err) {
-                console.error('Failed to update mic state on backend:', err);
-            }
+
+        // Notify backend of mic state (suppresses tool calls while mic is active)
+        try {
+            await fetch('/api/test/mic-state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId: sessionIdRef.current, active: newState })
+            });
+        } catch (err) {
+            console.error('Failed to update mic state:', err);
         }
     }, [isMicActive, startMic, stopMic]);
 
     const startTest = useCallback(async (targetUrl: string, persona: any, goal?: string) => {
+        // Extract voice consistently
+        const voiceName = persona.data?.voiceName || persona.voiceName || persona.data?.voice_name || persona.voice_name || 'Puck';
+        const personaContentStr = persona.data?.content || persona.content || '';
+        
+        console.log('[usePlaywrightAgent] Starting test with voice:', voiceName, 'for persona:', persona.data?.label || persona.label);
+        
         // Reset
-        isLiveApiRef.current = true; // For now assuming playwright mode uses Live API
+        isLiveApiRef.current = true;
         setStatus('running');
         setThoughts([]);
         setScreenshots([]);
@@ -284,8 +302,11 @@ export function usePlaywrightAgent() {
         setUserTranscript('');
         setAgentTranscript('');
         setTranscripts([]);
-        setPersonaVoice(persona.data?.voiceName || persona.voiceName || 'Puck');
-        setPersonaContent(persona.data?.content || persona.content || '');
+        setPersonaVoice(voiceName);
+        setPersonaContent(personaContentStr);
+        
+        // Stop any playing audio from previous sessions
+        stopTts();
 
         const sessionId = `session-${Date.now()}`;
         sessionIdRef.current = sessionId;
@@ -443,9 +464,9 @@ export function usePlaywrightAgent() {
                     goal,
                     persona: {
                         label: persona.data?.label || persona.label || 'Unknown Persona',
-                        content: persona.data?.content || persona.content || '',
+                        content: personaContentStr,
                         fields: persona.data?.fields || persona.fields || {},
-                        voiceName: persona.data?.voiceName || persona.voiceName || 'Puck',
+                        voiceName: voiceName,
                     },
                 }),
             });

@@ -121,7 +121,10 @@ interface AgentSession {
     running: boolean;
     micActive?: boolean;
     geminiWs?: WebSocket;
+    conversationWs?: WebSocket;
     sessionLog: string[];
+    persona?: any;
+    voiceName?: string;
     playwright?: {
         screenshotInterval: ReturnType<typeof setInterval> | null;
     };
@@ -338,7 +341,7 @@ app.post('/api/test/stop', (req, res) => {
     }
 });
 
-// 4. Receive user microphone audio
+// 4. Receive user microphone audio — always forward to the testing session's Live API WS
 app.post('/api/test/audio', (req, res) => {
     const { sessionId, audioData } = req.body;
     const session = activeSessions.get(sessionId);
@@ -346,57 +349,26 @@ app.post('/api/test/audio', (req, res) => {
         return res.status(404).json({ error: 'No active Live API session' });
     }
 
-    // Forward user audio to Gemini Live API
-    if (session.geminiWs?.readyState === WebSocket.OPEN) {
-        const audioMessage = {
-            realtimeInput: {
-                mediaChunks: [{
-                    data: audioData, // base64 PCM 16kHz
-                    mimeType: 'audio/pcm;rate=16000'
-                }]
-            }
-        };
-        session.geminiWs.send(JSON.stringify(audioMessage));
-    }
+    // Send user audio directly to testing session — Live API has built-in VAD
+    console.log(`[${sessionId}] Received audio chunk (${audioData.length} bytes)`);
+    session.geminiWs.send(JSON.stringify({
+        realtimeInput: {
+            mediaChunks: [{
+                data: audioData,
+                mimeType: 'audio/pcm;rate=16000'
+            }]
+        }
+    }));
     res.json({ ok: true });
 });
 
-// 5. Toggle microphone state (conversation mode vs. testing mode)
+// 5. Toggle microphone state — suppresses tool calls during conversation
 app.post('/api/test/mic-state', (req, res) => {
     const { sessionId, active } = req.body;
     const session = activeSessions.get(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
-
     session.micActive = active;
-    console.log(`[${sessionId}] Mic state changed to: ${active ? 'ACTIVE (Conversation Mode)' : 'INACTIVE (Testing Mode)'}`);
-
-    if (session.geminiWs && session.geminiWs.readyState === WebSocket.OPEN) {
-        const history = session.sessionLog.length > 0 
-            ? session.sessionLog.join('\n')
-            : "No actions taken yet.";
-            
-        const msg = active
-            ? `[SYSTEM] User has turned on their microphone. Suspend all autonomous testing actions and tools.
-Switch to CONVERSATION MODE: listen to the user, respond to their questions in character, and wait for their input. 
-Do not click or type anything until the mic is turned off.
-
-SESSION LOG SO FAR:
-${history}
-
-Use this log to answer questions about what you have done, what failed, or what you observe.`
-            : "[SYSTEM] User has turned off their microphone. Switch back to TESTING MODE: resume autonomous testing and navigation of the application using your tools. Follow the previous goal if provided.";
-            
-        session.geminiWs.send(JSON.stringify({
-            clientContent: {
-                turns: [{
-                    role: 'user',
-                    parts: [{ text: msg }]
-                }],
-                turnComplete: true
-            }
-        }));
-    }
-
+    console.log(`[${sessionId}] Mic state: ${active ? 'ACTIVE' : 'INACTIVE'}`);
     res.json({ success: true });
 });
 
@@ -419,6 +391,8 @@ app.post('/api/tts', async (req, res) => {
         ];
         
         const selectedVoice = GEMINI_VOICES.includes(voiceName) ? voiceName : 'Puck';
+        
+        console.log(`[TTS] Synthesizing with voice: ${selectedVoice} (requested: ${voiceName})`);
 
         const response = await fetch(ttsUrl, {
             method: 'POST',
@@ -498,6 +472,10 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
     let stepCount = 0;
     const MAX_STEPS = 20;
     const consoleErrors: string[] = [];
+    
+    // Extract voice consistently - same as frontend
+    const voiceName = persona.voiceName || persona.voice_name || 'Puck';
+    console.log(`[${sessionId}] Using voice: ${voiceName} for persona: ${persona.label}`);
 
     // Pre-declare and register session immediately
     const session: AgentSession = { 
@@ -507,6 +485,8 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
         micActive: false, 
         geminiWs: undefined, 
         sessionLog: [],
+        persona,
+        voiceName,
         playwright: { screenshotInterval: null },
         mousePos: { x: 0, y: 0 },
         introComplete: false
@@ -538,6 +518,8 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
             }, 10000);
 
             geminiWs.on('open', () => {
+                console.log(`[${sessionId}] Configuring Live API with voice: ${voiceName}`);
+                
                 const configMessage = {
                     setup: {
                         model: `projects/${GCP_PROJECT_ID}/locations/${GCP_LOCATION}/publishers/google/models/${LIVE_MODEL}`,
@@ -546,7 +528,7 @@ async function runLiveAgentLoop(sessionId: string, targetUrl: string, persona: a
                             speechConfig: {
                                 voiceConfig: {
                                     prebuiltVoiceConfig: {
-                                        voiceName: persona.voiceName || persona.voice_name || 'Puck'
+                                        voiceName: voiceName
                                     }
                                 }
                             }
@@ -1259,6 +1241,9 @@ wss.on('connection', (ws, req) => {
             if (data.type === 'start') {
                 const persona = data.persona;
                 const personaPrompt = buildPersonaPrompt(persona);
+                const voiceName = persona?.data?.voiceName || persona?.voiceName || persona?.data?.voice_name || persona?.voice_name || 'Puck';
+                
+                console.log('[Vision Mode] Starting with voice:', voiceName, 'for persona:', persona?.data?.label || persona?.label);
 
                 const accessToken = await getAccessToken();
                 geminiWs = new WebSocket(LIVE_WS_URL, {
@@ -1276,7 +1261,7 @@ wss.on('connection', (ws, req) => {
                                 speechConfig: {
                                     voiceConfig: {
                                         prebuiltVoiceConfig: {
-                                            voiceName: persona?.data?.voiceName || persona?.voiceName || persona?.data?.voice_name || persona?.voice_name || 'Puck'
+                                            voiceName: voiceName
                                         }
                                     }
                                 }

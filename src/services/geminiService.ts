@@ -273,7 +273,9 @@ export const geminiService = {
 
       const gender = result.gender || 'neutral';
       
-      // Mapping to specific premium voices
+      console.log(`[Voice Detection] Name: "${name}", Gender: ${gender}`);
+      
+      // Mapping to specific premium voices - CONSISTENT ACROSS ALL CONTEXTS
       if (gender === 'female') return 'Aoede';
       if (gender === 'male') return 'Charon';
       return 'Puck';
@@ -281,5 +283,13 @@ export const geminiService = {
       console.error("Voice detection error:", error);
       return 'Puck';
     }
+  },
+
+  // Helper to get consistent voice from persona object
+  getPersonaVoice(persona: any): string {
+    // Priority: explicit voiceName > voice_name > default
+    const voice = persona?.data?.voiceName || persona?.voiceName || persona?.data?.voice_name || persona?.voice_name || 'Puck';
+    console.log('[Voice Helper] Resolved voice:', voice, 'from persona:', persona?.data?.label || persona?.label);
+    return voice;
   }
 };
